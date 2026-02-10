@@ -31,10 +31,6 @@ const Login = () => {
       
       // Step 1: Get CSRF token, then Step 2: Login with token
       const response = await login(username.trim(), password);
-      
-      // Check if login was successful
-      // Backend response (per your example) puts success_key inside message:
-      // { message: { success_key: 1, ... }, ... }
       const msg = response && response.message;
       const successValue =
         (msg && (msg.success ?? msg.success_key)) ??
@@ -53,11 +49,11 @@ const Login = () => {
           success_key: src.success_key ?? src.success ?? successValue,
           message: src.message,
           sid: src.sid,
-          api_key: src.api_key,
-          api_secret: src.api_secret,
+          api_key: response.data.api_key,
+          api_secret: response.data.api_secret,
           username: src.username,
-          email: src.email,
-          base_url: src.base_url || 'http://localhost:8000',
+          email: response.data.email,
+          base_url: src.base_url || 'http://192.168.1.81:8000',
         };
         
         // Save login session data to storage
@@ -71,8 +67,6 @@ const Login = () => {
         if (loginData.api_key && loginData.api_secret) {
           updateSavedCredentials(loginData.api_key, loginData.api_secret);
         }
-        
-        console.log('Login successful, session saved:', loginData);
         
         // Navigate to POS profile selection screen after successful login
         navigate('/select-pos-profile');

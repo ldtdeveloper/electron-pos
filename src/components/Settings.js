@@ -153,7 +153,7 @@ const Settings = ({ onClose, onSyncComplete }) => {
               type="text"
               value={baseURL}
               onChange={(e) => setBaseURL(e.target.value)}
-              placeholder="http://localhost:8000"
+              placeholder="http://192.168.1.81:8000"
               className="settings-input"
             />
           </div>

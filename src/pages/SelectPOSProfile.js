@@ -29,13 +29,19 @@ const SelectPOSProfile = () => {
         }
 
         // Fetch POS profile data to determine which profiles are available to this user
-        // Backend may return allowed profiles list inside profile data
+        // Backend may return:
+        // - a plain array: [{ name, warehouse, company }, ...]
+        // - or an object with profiles / pos_profiles / allowed_pos_profiles
         const profileData = await fetchPOSProfileData(DEFAULT_PROFILE);
 
         let availableProfiles = [];
 
-        // Try common shapes where allowed profiles might be listed
-        if (Array.isArray(profileData.profiles)) {
+        // 1) If API returned an array (e.g. [{ name: 'pos3', ... }, ...])
+        if (Array.isArray(profileData)) {
+          availableProfiles = profileData;
+        }
+        // 2) Try common shapes where allowed profiles might be listed
+        else if (Array.isArray(profileData.profiles)) {
           availableProfiles = profileData.profiles;
         } else if (Array.isArray(profileData.pos_profiles)) {
           availableProfiles = profileData.pos_profiles;
@@ -51,7 +57,12 @@ const SelectPOSProfile = () => {
         );
         uniqueProfiles.add(DEFAULT_PROFILE);
 
-        setProfiles(Array.from(uniqueProfiles));
+        // Ensure DEFAULT_PROFILE is always the first option in the dropdown
+        const profileList = [
+          ...Array.from(uniqueProfiles).filter(p => p !== DEFAULT_PROFILE),
+        ];
+
+        setProfiles(profileList);
       } catch (err) {
         console.error('Error loading POS profiles:', err);
         setError('Failed to load POS profiles. Please try again or contact admin.');

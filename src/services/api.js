@@ -2,7 +2,7 @@ import axios from 'axios';
 import { getSetting, getLoginSession } from './storage';
 
 // Get API base URL from settings or use default
-let apiBaseURL = 'http://localhost:8000';
+let apiBaseURL = 'http://192.168.1.81:8000';
 
 // Initialize base URL from settings
 const initBaseURL = async () => {
@@ -16,7 +16,7 @@ const initBaseURL = async () => {
 initBaseURL();
 
 export const setApiBaseURL = (url) => {
-  apiBaseURL = url || 'http://localhost:8000';
+  apiBaseURL = url || 'http://192.168.1.81:8000';
 };
 
 export const getApiBaseURL = () => {
@@ -41,7 +41,7 @@ export const login = async (username, password) => {
     
     // Make POST request to login endpoint
     const response = await client.post(
-      '/api/method/login',
+      '/api/method/frappe.core.doctype.user.custom.login',
       {
         usr: username,
         pwd: password,
@@ -237,18 +237,23 @@ export const searchCustomersFromERPNext = async (searchTerm = '', pageLength = 1
 export const fetchPOSProfileData = async (posProfile = 'POS2') => {
   try {
     const client = await createAuthenticatedClient();
-    const response = await client.get('/api/method/erpnext.selling.page.point_of_sale.point_of_sale.get_pos_profile_data', {
+
+    const response = await client.get('/api/resource/POS Profile', {
       params: {
-        pos_profile: posProfile || 'POS2',
+        filters: JSON.stringify([
+          ["applicable_for_users.user", "=", "akash@yopmail.com"]
+        ]),
+        fields: JSON.stringify(["name", "warehouse", "company"])
       },
     });
-    
-    return response.data?.message || response.data || {};
+
+    return response.data?.data || response.data?.message || {};
   } catch (error) {
     console.error('Error fetching POS profile data:', error);
     throw error;
   }
 };
+
 
 // Submit sales invoice to ERPNext
 export const submitSalesInvoice = async (invoiceData) => {
