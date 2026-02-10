@@ -1,0 +1,125 @@
+.pos-profile-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+.pos-profile-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 2rem 2.5rem;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.35);
+}
+
+.pos-profile-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.pos-profile-subtitle {
+  margin: 0 0 1.5rem 0;
+  font-size: 0.95rem;
+  color: #4b5563;
+}
+
+.pos-profile-error {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.9rem;
+}
+
+.pos-profile-field {
+  margin-bottom: 1.5rem;
+}
+
+.pos-profile-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.pos-profile-select {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.98rem;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.pos-profile-select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.pos-profile-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.pos-profile-button {
+  flex: 1;
+  padding: 0.7rem 1rem;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: background 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease;
+}
+
+.pos-profile-button.primary {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.35);
+}
+
+.pos-profile-button.primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.45);
+}
+
+.pos-profile-button.secondary {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.pos-profile-button.secondary:hover {
+  background: #d1d5db;
+}
+
+.pos-profile-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+@media (max-width: 480px) {
+  .pos-profile-card {
+    padding: 1.5rem 1.75rem;
+  }
+
+  .pos-profile-actions {
+    flex-direction: column-reverse;
+  }
+}
+
+
