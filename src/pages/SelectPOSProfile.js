@@ -32,7 +32,7 @@ const SelectPOSProfile = () => {
         // Backend may return:
         // - a plain array: [{ name, warehouse, company }, ...]
         // - or an object with profiles / pos_profiles / allowed_pos_profiles
-        const profileData = await fetchPOSProfileData(DEFAULT_PROFILE);
+        const profileData = await fetchPOSProfileData(session.email);
 
         let availableProfiles = [];
 

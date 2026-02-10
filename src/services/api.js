@@ -234,14 +234,14 @@ export const searchCustomersFromERPNext = async (searchTerm = '', pageLength = 1
 };
 
 // Fetch POS profile data from ERPNext
-export const fetchPOSProfileData = async (posProfile = 'POS2') => {
+export const fetchPOSProfileData = async (email) => {
   try {
     const client = await createAuthenticatedClient();
 
     const response = await client.get('/api/resource/POS Profile', {
       params: {
         filters: JSON.stringify([
-          ["applicable_for_users.user", "=", "akash@yopmail.com"]
+          ["applicable_for_users.user", "=", email]
         ]),
         fields: JSON.stringify(["name", "warehouse", "company"])
       },
