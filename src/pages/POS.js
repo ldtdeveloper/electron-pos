@@ -116,7 +116,7 @@ const POS = () => {
 
   const loadPOSProfileData = async () => {
     try {
-      const profileData = await fetchPOSProfileData('POS2');
+      const profileData = await fetchPOSProfileData('pos3');
       await savePOSProfileData(profileData);
       console.log('POS profile data loaded and saved:', profileData);
     } catch (error) {

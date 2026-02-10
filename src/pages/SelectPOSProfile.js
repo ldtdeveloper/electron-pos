@@ -4,7 +4,7 @@ import { getLoginSession, savePOSProfile, getPOSProfile } from '../services/stor
 import { fetchPOSProfileData } from '../services/api';
 import './SelectPOSProfile.css';
 
-const DEFAULT_PROFILE = 'POS2';
+const DEFAULT_PROFILE = 'pos3';
 
 const SelectPOSProfile = () => {
   const navigate = useNavigate();

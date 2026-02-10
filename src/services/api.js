@@ -120,7 +120,7 @@ export const updateSavedCredentials = (apiKey, apiSecret) => {
 };
 
 // Search products from ERPNext using POS endpoint
-export const searchProductsFromERPNext = async (searchTerm = '', posProfile = 'POS2', priceList = '', itemGroup = '', start = 0, pageLength = 20) => {
+export const searchProductsFromERPNext = async (searchTerm = '', posProfile = 'pos3', priceList = '', itemGroup = '', start = 0, pageLength = 20) => {
   try {
     const client = await createAuthenticatedClient();
     const response = await client.get('/api/method/erpnext.selling.page.point_of_sale.point_of_sale.get_items', {
@@ -130,7 +130,7 @@ export const searchProductsFromERPNext = async (searchTerm = '', posProfile = 'P
         page_length: pageLength || 20,
         price_list: priceList || '',
         item_group: itemGroup || '',
-        pos_profile: posProfile || 'POS2',
+        pos_profile: posProfile || 'pos3',
       },
     });
     

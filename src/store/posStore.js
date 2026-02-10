@@ -87,12 +87,12 @@ const usePOSStore = create((set, get) => ({
       // If online, search from ERPNext API
       if (isOnline()) {
         try {
-          // Get price list from settings, use hardcoded POS2 for POS profile
+          // Get price list from settings, use hardcoded pos3 for POS profile
           const priceList = await getPriceList() || '';
           
           const results = await searchProductsFromERPNext(
             term,
-            'POS2', // Hardcoded POS profile
+            'pos3', // Hardcoded POS profile
             priceList,
             '', // item_group - empty for all groups
             0,  // start
