@@ -72,3 +72,5 @@ const Cart = ({ cart, onUpdateQuantity, onRemoveItem, onClearCart, subtotal, tax
 
 export default Cart;
 
+
+

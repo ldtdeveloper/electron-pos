@@ -34,41 +34,14 @@ const createApiClient = () => {
   });
 };
 
-// Step 1: Get the CSRF Token
-export const getCSRFToken = async () => {
-  try {
-    const client = createApiClient();
-    const response = await client.get('/api/method/erpnext.api.get_csrf_token', {
-      headers: {
-        Accept: 'application/json',
-      },
-    });
-    
-    // Extract CSRF token from response
-    const csrfToken = response.data?.message?.csrf_token || response.data?.message;
-    
-    if (!csrfToken) {
-      throw new Error('CSRF token not found in response');
-    }
-    
-    return csrfToken;
-  } catch (error) {
-    console.error('Error fetching CSRF token:', error);
-    throw new Error('Failed to get CSRF token. Please try again.');
-  }
-};
-
-// Step 2: Login with CSRF Token
+// Login using standard Frappe login endpoint
 export const login = async (username, password) => {
   try {
-    // First, get the CSRF token
-    const csrfToken = await getCSRFToken();
-    
     const client = createApiClient();
     
-    // Make POST request to login endpoint with CSRF token
+    // Make POST request to login endpoint
     const response = await client.post(
-      '/api/method/erpnext.api.login',
+      '/api/method/login',
       {
         usr: username,
         pwd: password,
@@ -77,7 +50,6 @@ export const login = async (username, password) => {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          'X-Frappe-CSRF-Token': csrfToken,
         },
       }
     );
@@ -98,7 +70,6 @@ export const login = async (username, password) => {
   }
 };
 
-let csrfToken = '';
 let savedApiKey = '';
 let savedApiSecret = '';
 
@@ -109,10 +80,6 @@ const loadSavedCredentials = async () => {
     if (session) {
       savedApiKey = session.api_key || '';
       savedApiSecret = session.api_secret || '';
-      // Refresh CSRF token if we have credentials
-      if (savedApiKey && savedApiSecret) {
-        await refreshCSRFToken();
-      }
     }
   } catch (error) {
     console.error('Error loading saved credentials:', error);
@@ -122,18 +89,6 @@ const loadSavedCredentials = async () => {
 // Initialize on module load
 loadSavedCredentials();
 
-// Get CSRF token and cache it
-export const refreshCSRFToken = async () => {
-  try {
-    const token = await getCSRFToken();
-    csrfToken = token;
-    return token;
-  } catch (error) {
-    console.error('Error refreshing CSRF token:', error);
-    throw error;
-  }
-};
-
 // Create authenticated API client
 const createAuthenticatedClient = async () => {
   // Load credentials if not already loaded
@@ -141,15 +96,9 @@ const createAuthenticatedClient = async () => {
     await loadSavedCredentials();
   }
   
-  // Get CSRF token
-  if (!csrfToken) {
-    await refreshCSRFToken();
-  }
-  
   const headers = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
-    'X-Frappe-CSRF-Token': csrfToken,
   };
   
   // Add token-based authentication if we have API credentials

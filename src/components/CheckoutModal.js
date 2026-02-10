@@ -134,3 +134,5 @@ const CheckoutModal = ({ isOpen, onClose, cart, totals, onCheckout, customer }) 
 
 export default CheckoutModal;
 
+
+
