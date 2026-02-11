@@ -4,6 +4,7 @@ import usePOSStore from '../store/posStore';
 import NumericKeypad from '../components/NumericKeypad';
 import InvoiceItemCart from '../components/InvoiceItemCart';
 import ConfirmationModal from '../components/ConfirmationModal';
+import ReceiptModal from '../components/ReceiptModal';
 import './CompleteOrder.css';
 
 const CompleteOrder = () => {
@@ -22,7 +23,9 @@ const CompleteOrder = () => {
   const [discountInput, setDiscountInput] = useState(''); // Raw input without %
   const [redeemPoints, setRedeemPoints] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [invoiceNumber] = useState('SINV-26-00028'); // You can generate this dynamically
+  const [receiptData, setReceiptData] = useState(null);
 
   const taxRate = 18; // IGST rate
   const subtotal = getCartSubtotal();
@@ -96,11 +99,30 @@ const CompleteOrder = () => {
     // Here you can add your API call or order submission logic
     // submitOrderToAPI(invoiceNumber, cart, grandTotal, etc.);
     
-    clearCart();
-    setCashAmount('');
-    setDiscountPercentage(0);
-    setDiscountInput('');
-    navigate('/pos');
+    // Prepare receipt data
+    const receipt = {
+      storeName: 'Rahul Builders Store',
+      invoiceNumber: invoiceNumber,
+      soldBy: 'akash@yopmail.com', // Get from user session/settings
+      customer: customer?.customer_name || 'Guest',
+      items: cart.map(item => ({
+        name: item.item_name || item.name,
+        quantity: item.quantity,
+        uom: item.uom || 'Kg',
+        amount: item.rate * item.quantity
+      })),
+      netTotal: subtotal,
+      tax: tax,
+      taxLabel: 'IGST',
+      grandTotal: grandTotal,
+      paymentMethod: paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1),
+      paidAmount: paidAmount,
+      status: 'Paid'
+    };
+    
+    setReceiptData(receipt);
+    setShowConfirmModal(false);
+    setShowReceiptModal(true);
   };
 
   const handleEditCart = () => {
@@ -113,6 +135,26 @@ const CompleteOrder = () => {
     setDiscountPercentage(0);
     setDiscountInput('');
     setRedeemPoints(false);
+  };
+
+  const handleReceiptNewOrder = () => {
+    clearCart();
+    setCashAmount('');
+    setDiscountPercentage(0);
+    setDiscountInput('');
+    setRedeemPoints(false);
+    setShowReceiptModal(false);
+    navigate('/pos');
+  };
+
+  const handlePrintReceipt = () => {
+    // Implement print functionality
+    // window.print();
+  };
+
+  const handleEmailReceipt = () => {
+    // Implement email functionality
+    // alert('Email receipt functionality will be implemented soon!');
   };
 
   const handleDiscountChange = (value) => {
@@ -245,6 +287,16 @@ const CompleteOrder = () => {
         confirmText="Yes"
         cancelText="No"
         confirmButtonColor="#2563eb"
+      />
+
+      {/* Receipt Modal */}
+      <ReceiptModal
+        isOpen={showReceiptModal}
+        onClose={() => setShowReceiptModal(false)}
+        invoiceData={receiptData}
+        onNewOrder={handleReceiptNewOrder}
+        onPrintReceipt={handlePrintReceipt}
+        onEmailReceipt={handleEmailReceipt}
       />
     </div>
   );
