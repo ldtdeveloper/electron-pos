@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import usePOSStore from '../store/posStore';
 import NumericKeypad from '../components/NumericKeypad';
 import InvoiceItemCart from '../components/InvoiceItemCart';
+import ConfirmationModal from '../components/ConfirmationModal';
 import './CompleteOrder.css';
 
 const CompleteOrder = () => {
@@ -18,7 +19,10 @@ const CompleteOrder = () => {
 
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [discountPercentage, setDiscountPercentage] = useState(0);
+  const [discountInput, setDiscountInput] = useState(''); // Raw input without %
   const [redeemPoints, setRedeemPoints] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [invoiceNumber] = useState('SINV-26-00028'); // You can generate this dynamically
 
   const taxRate = 18; // IGST rate
   const subtotal = getCartSubtotal();
@@ -82,10 +86,20 @@ const CompleteOrder = () => {
       return;
     }
 
-    // Process the order
-    alert('Order completed successfully!');
+    // Show confirmation modal
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = () => {
+    // Process the order after confirmation
+    console.log('Order completed successfully!');
+    // Here you can add your API call or order submission logic
+    // submitOrderToAPI(invoiceNumber, cart, grandTotal, etc.);
+    
     clearCart();
     setCashAmount('');
+    setDiscountPercentage(0);
+    setDiscountInput('');
     navigate('/pos');
   };
 
@@ -97,7 +111,28 @@ const CompleteOrder = () => {
     clearCart();
     setCashAmount('');
     setDiscountPercentage(0);
+    setDiscountInput('');
     setRedeemPoints(false);
+  };
+
+  const handleDiscountChange = (value) => {
+    // Convert to string if it's a number
+    const stringValue = typeof value === 'string' ? value : String(value);
+    
+    // Remove any non-numeric characters except decimal point
+    const numericValue = stringValue.replace(/[^0-9.]/g, '');
+    
+    // Parse the value
+    const parsedValue = parseFloat(numericValue) || 0;
+    
+    // Limit to 100%
+    if (parsedValue > 100) {
+      setDiscountInput('100');
+      setDiscountPercentage(100);
+    } else {
+      setDiscountInput(numericValue);
+      setDiscountPercentage(parsedValue);
+    }
   };
 
   const handleRecentOrders = () => {
@@ -132,9 +167,10 @@ const CompleteOrder = () => {
             tax={tax}
             grandTotal={baseGrandTotal}
             discountPercentage={discountPercentage}
+            discountInput={discountInput}
             discountAmount={discountAmount}
             onEditCart={handleEditCart}
-            onDiscountChange={setDiscountPercentage}
+            onDiscountChange={handleDiscountChange}
           />
         </div>
 
@@ -198,6 +234,18 @@ const CompleteOrder = () => {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={handleConfirmSubmit}
+        title="Confirm"
+        message={`Permanently Submit ${invoiceNumber}?`}
+        confirmText="Yes"
+        cancelText="No"
+        confirmButtonColor="#2563eb"
+      />
     </div>
   );
 };

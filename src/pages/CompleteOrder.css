@@ -207,7 +207,7 @@
 
 .complete-order-btn {
   width: 100%;
-  background: #000;
+  background: #2563eb;
   color: white;
   border: none;
   padding: 1rem;
@@ -220,7 +220,7 @@
 }
 
 .complete-order-btn:hover:not(:disabled) {
-  background: #1f2937;
+  background: #1d4ed8;
 }
 
 .complete-order-btn:disabled {

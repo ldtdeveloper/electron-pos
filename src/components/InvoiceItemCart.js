@@ -3,6 +3,7 @@ import './InvoiceItemCart.css';
 
 const InvoiceItemCart = ({ customer, cart, subtotal, tax, grandTotal, discountPercentage, discountAmount, onEditCart, onDiscountChange }) => {
   const [showDiscountInput, setShowDiscountInput] = useState(false);
+  const [discountInputValue, setDiscountInputValue] = useState('');
 
   const getInitials = (name) => {
     if (!name) return 'G';
@@ -14,12 +15,73 @@ const InvoiceItemCart = ({ customer, cart, subtotal, tax, grandTotal, discountPe
   };
 
   const handleDiscountClick = () => {
-    if (discountPercentage > 0) {
-      // If discount is applied, clicking shows the input again
-      setShowDiscountInput(true);
+    setShowDiscountInput(true);
+    setDiscountInputValue(discountPercentage > 0 ? discountPercentage.toString() : '');
+  };
+
+  const handleDiscountInputChange = (e) => {
+    let value = e.target.value;
+    
+    // Remove the % symbol if user types it
+    value = value.replace('%', '');
+    
+    // Allow only numbers and decimal point
+    value = value.replace(/[^0-9.]/g, '');
+    
+    // Prevent multiple decimal points
+    const decimalCount = (value.match(/\./g) || []).length;
+    if (decimalCount > 1) {
+      return;
+    }
+    
+    // Update the input display value
+    setDiscountInputValue(value);
+    
+    // Parse and validate the numeric value
+    const numValue = parseFloat(value) || 0;
+    
+    // Limit to maximum 100%
+    if (numValue > 100) {
+      setDiscountInputValue('100');
+      onDiscountChange('100'); // Pass string instead of number
     } else {
-      // If no discount, show input
-      setShowDiscountInput(true);
+      onDiscountChange(value); // Pass string instead of number
+    }
+  };
+
+  const handleDiscountBlur = () => {
+    if (discountPercentage > 0) {
+      setShowDiscountInput(false);
+    } else {
+      setShowDiscountInput(false);
+      setDiscountInputValue('');
+    }
+  };
+
+  const handleDiscountKeyDown = (e) => {
+    // Allow these keys without restriction
+    const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+    
+    if (allowedKeys.includes(e.key)) {
+      if (e.key === 'Enter') {
+        handleDiscountBlur();
+      }
+      return;
+    }
+    
+    // Allow Ctrl/Cmd shortcuts
+    if (e.ctrlKey || e.metaKey) {
+      return;
+    }
+    
+    // Allow decimal point only if not already present
+    if (e.key === '.' && !discountInputValue.includes('.')) {
+      return;
+    }
+    
+    // Only allow numbers
+    if (e.key < '0' || e.key > '9') {
+      e.preventDefault();
     }
   };
 
@@ -82,28 +144,24 @@ const InvoiceItemCart = ({ customer, cart, subtotal, tax, grandTotal, discountPe
             <span>Additional {discountPercentage}% discount applied</span>
           </div>
         ) : (
-          // State 3: Show input field
-          <input
-            type="text"
-            className="discount-input"
-            placeholder="10%"
-            value={discountPercentage ? `${discountPercentage}%` : ''}
-            onChange={(e) => {
-              const value = e.target.value.replace('%', '');
-              const numValue = parseFloat(value) || 0;
-              onDiscountChange(numValue);
-              if (numValue > 0) {
-                // Hide input and show applied message after entering value
-                setTimeout(() => setShowDiscountInput(false), 500);
-              }
-            }}
-            onBlur={() => {
-              if (discountPercentage > 0) {
-                setShowDiscountInput(false);
-              }
-            }}
-            autoFocus
-          />
+          // State 3: Show input field with % suffix
+          <div className="discount-input-wrapper">
+            <input
+              type="text"
+              className="discount-input"
+              placeholder="0"
+              value={discountInputValue}
+              onChange={handleDiscountInputChange}
+              onBlur={handleDiscountBlur}
+              onKeyDown={handleDiscountKeyDown}
+              autoFocus
+              maxLength="6"
+            />
+            <span className="discount-percentage-symbol">%</span>
+            {parseFloat(discountInputValue) > 100 && (
+              <span className="discount-error">Max 100%</span>
+            )}
+          </div>
         )}
       </div>
 
