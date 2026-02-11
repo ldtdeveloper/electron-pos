@@ -120,32 +120,58 @@ export const updateSavedCredentials = (apiKey, apiSecret) => {
 };
 
 // Search products from ERPNext using POS endpoint
-export const searchProductsFromERPNext = async (searchTerm = '', posProfile = 'pos3', priceList = '', itemGroup = '', start = 0, pageLength = 20) => {
+export const searchProductsFromERPNext = async (
+  searchTerm = '',
+  posProfile = '',
+  priceList = '',
+  itemGroup = '',
+  start = 0,
+  pageLength = 20
+) => {
   try {
     const client = await createAuthenticatedClient();
-    const response = await client.get('/api/method/erpnext.selling.page.point_of_sale.point_of_sale.get_items', {
-      params: {
-        search_term: searchTerm || '',
-        start: start || 0,
-        page_length: pageLength || 20,
-        price_list: priceList || '',
-        item_group: itemGroup || '',
-        pos_profile: posProfile || 'pos3',
-      },
-    });
-    
-    // Handle response structure - adjust based on actual API response
-    const items = response.data?.message?.items || response.data?.message || [];
-    
-    return items.map(item => ({
+
+    // Create form data
+    const formData = new URLSearchParams();
+    formData.append('search_term', searchTerm || '');
+    formData.append('start', start || 0);
+    formData.append('page_length', pageLength || 20);
+    formData.append('price_list', priceList || 'Standard Selling');
+    formData.append('item_group', itemGroup || '');
+    formData.append('pos_profile', posProfile || '');
+
+    const response = await client.post(
+      '/api/method/erpnext.selling.page.point_of_sale.point_of_sale.get_items',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      }
+    );
+
+    const items =
+      response.data?.message?.items ||
+      response.data?.message ||
+      [];
+
+    return items.map((item) => ({
       item_code: item.item_code || item.name,
       item_name: item.item_name || item.name,
       description: item.description || '',
-      standard_rate: item.rate || item.price_list_rate || item.standard_rate || 0,
-      rate: item.rate || item.price_list_rate || item.standard_rate || 0,
+      standard_rate:
+        item.rate ||
+        item.price_list_rate ||
+        item.standard_rate ||
+        0,
+      rate:
+        item.rate ||
+        item.price_list_rate ||
+        item.standard_rate ||
+        0,
       stock_uom: item.stock_uom || item.uom || 'Nos',
       image: item.image || null,
-      qty: item.qty || 0,
+      qty: item.actual_qty || 0,
       has_variants: item.has_variants || 0,
     }));
   } catch (error) {
@@ -153,6 +179,7 @@ export const searchProductsFromERPNext = async (searchTerm = '', posProfile = 'p
     throw error;
   }
 };
+
 
 // Fetch products from ERPNext (legacy method - kept for sync)
 export const fetchProducts = async () => {
@@ -243,7 +270,7 @@ export const fetchPOSProfileData = async (email) => {
         filters: JSON.stringify([
           ["applicable_for_users.user", "=", email]
         ]),
-        fields: JSON.stringify(["name", "warehouse", "company"])
+        fields: JSON.stringify(["name", "warehouse", "company","selling_price_list"])
       },
     });
 

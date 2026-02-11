@@ -46,6 +46,8 @@ export const saveProducts = async (products) => {
       item_code: product.item_code,
       item_name: product.item_name,
       description: product.description || '',
+      // Persist quantity as actual_qty, supporting both API shapes (qty or actual_qty)
+      actual_qty: (product.actual_qty ?? product.qty ?? 0),
       rate: product.standard_rate || product.rate || 0,
       stock_uom: product.stock_uom || 'Nos',
       image: product.image || null,

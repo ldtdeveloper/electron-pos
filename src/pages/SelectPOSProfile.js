@@ -1,15 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getLoginSession, savePOSProfile, getPOSProfile } from '../services/storage';
-import { fetchPOSProfileData } from '../services/api';
+import {
+  getLoginSession,
+  savePOSProfile,
+  getPOSProfile,
+  getPOSProfileData,
+  savePOSProfileData,
+  saveCustomers,
+  saveProducts,
+  getPriceList,
+  savePriceList,
+} from '../services/storage';
+import {
+  fetchPOSProfileData,
+  searchCustomersFromERPNext,
+  searchProductsFromERPNext,
+} from '../services/api';
+import { isOnline } from '../utils/onlineStatus';
 import './SelectPOSProfile.css';
-
-const DEFAULT_PROFILE = 'pos3';
 
 const SelectPOSProfile = () => {
   const navigate = useNavigate();
   const [profiles, setProfiles] = useState([]);
-  const [selectedProfile, setSelectedProfile] = useState(DEFAULT_PROFILE);
+  const [selectedProfile, setSelectedProfile] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -28,15 +41,20 @@ const SelectPOSProfile = () => {
           setSelectedProfile(savedProfile);
         }
 
-        // Fetch POS profile data to determine which profiles are available to this user
-        // Backend may return:
-        // - a plain array: [{ name, warehouse, company }, ...]
-        // - or an object with profiles / pos_profiles / allowed_pos_profiles
-        const profileData = await fetchPOSProfileData(session.email);
+        // Load POS profiles:
+        // - online: fetch from API and cache
+        // - offline: read from local cache
+        let profileData = null;
+        if (isOnline()) {
+          profileData = await fetchPOSProfileData(session.email);
+          await savePOSProfileData(profileData);
+        } else {
+          profileData = await getPOSProfileData();
+        }
 
         let availableProfiles = [];
 
-        // 1) If API returned an array (e.g. [{ name: 'pos3', ... }, ...])
+        // 1) If API returned an array (e.g. [{ name: 'Ambika-Ventures(Dera Bassi)', ... }, ...])
         if (Array.isArray(profileData)) {
           availableProfiles = profileData;
         }
@@ -49,24 +67,22 @@ const SelectPOSProfile = () => {
           availableProfiles = profileData.allowed_pos_profiles;
         }
 
-        // Normalize to list of strings; always include DEFAULT_PROFILE as fallback
-        const uniqueProfiles = new Set(
-          availableProfiles
-            .map(p => (typeof p === 'string' ? p : p.name || p.pos_profile))
-            .filter(Boolean)
-        );
-        uniqueProfiles.add(DEFAULT_PROFILE);
+        // Normalize to list of strings
+        const profileList = availableProfiles
+          .map((p) => (typeof p === 'string' ? p : p?.name || p?.pos_profile))
+          .filter(Boolean);
 
-        // Ensure DEFAULT_PROFILE is always the first option in the dropdown
-        const profileList = [
-          ...Array.from(uniqueProfiles).filter(p => p !== DEFAULT_PROFILE),
-        ];
+        const uniqueProfiles = Array.from(new Set(profileList));
+        setProfiles(uniqueProfiles);
 
-        setProfiles(profileList);
+        // If nothing selected yet, default to first available profile
+        if (!savedProfile && uniqueProfiles.length > 0) {
+          setSelectedProfile(uniqueProfiles[0]);
+        }
       } catch (err) {
         console.error('Error loading POS profiles:', err);
-        setError('Failed to load POS profiles. Please try again or contact admin.');
-        setProfiles([DEFAULT_PROFILE]);
+        setError('Failed to load POS profiles. Please try again.');
+        setProfiles([]);
       } finally {
         setIsLoading(false);
       }
@@ -77,11 +93,84 @@ const SelectPOSProfile = () => {
 
   const handleContinue = async () => {
     try {
-      await savePOSProfile(selectedProfile || DEFAULT_PROFILE);
+      if (!selectedProfile) {
+        setError('Please select a POS profile.');
+        return;
+      }
+
+      // Persist selected profile for later API calls (items search needs it)
+      await savePOSProfile(selectedProfile);
+
+      // Prefetch/cache required data for offline mode
+      // - POS Profile data (allowed profiles etc.)
+      // - Customers
+      // - Products/Items (for selected POS profile)
+      // - Price list from the selected POS profile
+      if (isOnline()) {
+        const session = await getLoginSession();
+        let profileData = null;
+        if (session?.email) {
+          profileData = await fetchPOSProfileData(session.email);
+          await savePOSProfileData(profileData);
+        }
+
+        // Determine price list from selected POS profile
+        // profileData can be:
+        // - array of profiles
+        // - or an object with data/message holding the array
+        if (!profileData) {
+          profileData = await getPOSProfileData();
+        }
+
+        let profileArray = [];
+        if (Array.isArray(profileData)) {
+          profileArray = profileData;
+        } else if (Array.isArray(profileData?.data)) {
+          profileArray = profileData.data;
+        } else if (Array.isArray(profileData?.profiles)) {
+          profileArray = profileData.profiles;
+        } else if (Array.isArray(profileData?.pos_profiles)) {
+          profileArray = profileData.pos_profiles;
+        } else if (Array.isArray(profileData?.allowed_pos_profiles)) {
+          profileArray = profileData.allowed_pos_profiles;
+        }
+
+        const selectedProfileObj = profileArray.find(
+          (p) =>
+            (typeof p === 'object' && (p.name === selectedProfile || p.pos_profile === selectedProfile)) ||
+            p === selectedProfile
+        );
+
+        const priceListFromProfile =
+          (selectedProfileObj && selectedProfileObj.selling_price_list) || '';
+
+        // Save price list derived from POS profile for later searches
+        if (priceListFromProfile) {
+          await savePriceList(priceListFromProfile);
+        }
+
+        // Customers: use ERPNext search endpoint with empty txt + large page_length
+        const customers = await searchCustomersFromERPNext('', 10000);
+        await saveCustomers(customers);
+
+        // Items: use POS get_items endpoint with selected profile
+        const effectivePriceList = priceListFromProfile || (await getPriceList()) || '';
+        const items = await searchProductsFromERPNext(
+          '',
+          selectedProfile,
+          effectivePriceList,
+          '',
+          0,
+          10000
+        );
+        
+        await saveProducts(items);
+      }
+
       navigate('/pos');
     } catch (err) {
       console.error('Error saving POS profile:', err);
-      setError('Failed to save POS profile. Please try again.');
+      setError(err?.message || 'Failed to save POS profile / offline data. Please try again.');
     }
   };
 
@@ -93,9 +182,7 @@ const SelectPOSProfile = () => {
     <div className="pos-profile-container">
       <div className="pos-profile-card">
         <h1 className="pos-profile-title">Select POS Profile</h1>
-        <p className="pos-profile-subtitle">
-          Choose the POS profile attached to your user. Default is <strong>{DEFAULT_PROFILE}</strong>.
-        </p>
+        <p className="pos-profile-subtitle">Choose the POS profile attached to your user.</p>
 
         {error && <div className="pos-profile-error">{error}</div>}
 
