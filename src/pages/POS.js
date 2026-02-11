@@ -103,7 +103,7 @@ const POS = () => {
       removeOnlineListener();
       removeOfflineListener();
     };
-  }, [handleAutoSync, navigate]);
+  }, [handleAutoSync, navigate, loadProducts]);
 
   const loadTaxRate = async () => {
     const rate = await getSetting('tax_rate');
@@ -114,9 +114,10 @@ const POS = () => {
 
   const loadPOSProfileData = async () => {
     try {
-      const profileData = await fetchPOSProfileData('pos3');
+      const session = await getLoginSession();
+      if (!session?.email) return;
+      const profileData = await fetchPOSProfileData(session.email);
       await savePOSProfileData(profileData);
-      console.log('POS profile data loaded and saved:', profileData);
     } catch (error) {
       console.error('Error loading POS profile data:', error);
       // Don't block the UI if this fails
