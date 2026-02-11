@@ -1,0 +1,255 @@
+.invoice-item-cart {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1.5rem;
+}
+
+.customer-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.customer-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.125rem;
+  color: #666;
+}
+
+.customer-info h3 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  color: #333;
+}
+
+.customer-info p {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #999;
+}
+
+.item-cart-section {
+  flex: 1;
+  margin-bottom: 1rem;
+}
+
+.item-cart-section h4 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: #333;
+  font-weight: 600;
+}
+
+.item-cart-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.75rem;
+  color: #666;
+  font-weight: 600;
+}
+
+.item-cart-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.cart-item-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  padding: 1rem 0;
+  border-bottom: 1px solid #f3f4f6;
+  align-items: center;
+}
+
+.item-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.item-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.item-name {
+  font-size: 0.875rem;
+  color: #333;
+}
+
+.item-quantity,
+.item-amount {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.empty-cart {
+  padding: 2rem;
+  text-align: center;
+  color: #999;
+}
+
+.discount-section {
+  margin-bottom: 1rem;
+}
+
+.discount-btn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: white;
+  border: 1.5px dashed #d1d5db;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.discount-btn:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.discount-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #666;
+}
+
+.discount-input {
+  width: 100%;
+  padding: 0.75rem;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.discount-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.discount-input::placeholder {
+  color: #9ca3af;
+}
+
+.discount-applied {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #166534;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.discount-applied:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
+}
+
+.discount-icon-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: #22c55e;
+  color: white;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.totals-section {
+  background: #f9fafb;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.total-row:not(:last-child) {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.discount-row {
+  color: #ef4444;
+}
+
+.grand-total-row {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #333;
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+  border-top: 2px solid #e5e7eb !important;
+}
+
+.edit-cart-section {
+  margin-top: auto;
+}
+
+.edit-cart-btn {
+  width: 100%;
+  padding: 0.875rem;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.edit-cart-btn:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}

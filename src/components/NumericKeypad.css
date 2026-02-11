@@ -1,0 +1,38 @@
+.numeric-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.keypad-btn {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #333;
+}
+
+.keypad-btn:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.keypad-btn:active {
+  transform: scale(0.95);
+  background: #e5e7eb;
+}
+
+.keypad-btn-delete {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+.keypad-btn-delete:hover {
+  background: #fecaca;
+  border-color: #f87171;
+}

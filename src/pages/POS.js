@@ -8,7 +8,6 @@ import { isOnline, addOnlineListener, addOfflineListener } from '../utils/online
 import ProductList from '../components/ProductList';
 import Cart from '../components/Cart';
 import CustomerSearch from '../components/CustomerSearch';
-import CheckoutModal from '../components/CheckoutModal';
 import Settings from '../components/Settings';
 import './POS.css';
 
@@ -34,7 +33,6 @@ const POS = () => {
   } = usePOSStore();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [showCheckout, setShowCheckout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [taxRate, setTaxRate] = useState(0);
   const [onlineStatus, setOnlineStatus] = useState(isOnline());
@@ -130,32 +128,6 @@ const POS = () => {
     searchProducts(term);
   };
 
-  const handleCheckout = async (checkoutData) => {
-    const invoice = {
-      customer: customer?.name || checkoutData.customer || 'Guest',
-      customer_name: customer?.customer_name || checkoutData.customer || 'Guest',
-      date: new Date().toISOString().split('T')[0],
-      items: cart.map(item => ({
-        item_code: item.item_code,
-        item_name: item.item_name,
-        quantity: item.quantity,
-        rate: item.rate,
-        uom: item.uom,
-      })),
-      subtotal: getCartSubtotal(),
-      tax: getCartTax(taxRate),
-      grand_total: getCartGrandTotal(taxRate),
-      payment_method: checkoutData.paymentMethod,
-      amount_received: checkoutData.amountReceived,
-      synced: false,
-    };
-
-    await saveSalesInvoice(invoice);
-    clearCart();
-    setShowCheckout(false);
-    alert('Invoice saved successfully! It will be synced to ERPNext when online.');
-  };
-
   const handleSyncComplete = () => {
     loadProducts();
     loadTaxRate();
@@ -242,7 +214,7 @@ const POS = () => {
             <div className="cart-footer">
               <button
                 className="checkout-btn"
-                onClick={() => setShowCheckout(true)}
+                onClick={() => navigate('/complete-order')}
               >
                 Checkout
               </button>
@@ -250,15 +222,6 @@ const POS = () => {
           )}
         </div>
       </div>
-
-      <CheckoutModal
-        isOpen={showCheckout}
-        onClose={() => setShowCheckout(false)}
-        cart={cart}
-        totals={{ subtotal, tax, grandTotal }}
-        onCheckout={handleCheckout}
-        customer={customer}
-      />
 
       {showSettings && (
         <Settings
