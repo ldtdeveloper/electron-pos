@@ -215,6 +215,7 @@ const Login = () => {
       await savePOSClosingEntry(closingDoc, 'Submit');
 
       // Step 5: Close modal and navigate to POS profile selection
+      // User will then select a profile and create a new opening entry
       setShowOutdatedModal(false);
       navigate('/select-pos-profile');
     } catch (err) {
@@ -290,4 +291,3 @@ const Login = () => {
 };
 
 export default Login;
-

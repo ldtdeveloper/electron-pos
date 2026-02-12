@@ -417,3 +417,52 @@ export const savePOSClosingEntry = async (doc, action = 'Save') => {
     throw error;
   }
 };
+
+// Get POS Profile details including payment methods
+export const getPOSProfileDetails = async (profileName) => {
+  try {
+    const client = await createAuthenticatedClient();
+
+    const response = await client.get(
+      `/api/resource/POS Profile/${encodeURIComponent(profileName)}`,
+      {
+        headers: {
+          'Accept': 'application/json',
+        },
+      }
+    );
+
+    return response.data?.data || response.data;
+  } catch (error) {
+    console.error('Error getting POS profile details:', error);
+    throw error;
+  }
+};
+
+// Create POS Opening Voucher
+export const createOpeningVoucher = async (posProfile, company, balanceDetails) => {
+  try {
+    const client = await createAuthenticatedClient();
+
+    const formData = new URLSearchParams();
+    formData.append('pos_profile', posProfile);
+    formData.append('company', company);
+    formData.append('balance_details', JSON.stringify(balanceDetails));
+
+    const response = await client.post(
+      '/api/method/erpnext.selling.page.point_of_sale.point_of_sale.create_opening_voucher',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+        },
+      }
+    );
+
+    return response.data?.message || response.data;
+  } catch (error) {
+    console.error('Error creating opening voucher:', error);
+    throw error;
+  }
+};

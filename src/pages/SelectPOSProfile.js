@@ -15,7 +15,11 @@ import {
   fetchPOSProfileData,
   searchCustomersFromERPNext,
   searchProductsFromERPNext,
+  getPOSProfileDetails,
+  createOpeningVoucher,
+  checkOpeningEntry,
 } from '../services/api';
+import POSOpeningEntryModal from '../components/POSOpeningEntryModal';
 import { isOnline } from '../utils/onlineStatus';
 import './SelectPOSProfile.css';
 
@@ -25,6 +29,10 @@ const SelectPOSProfile = () => {
   const [selectedProfile, setSelectedProfile] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showOpeningModal, setShowOpeningModal] = useState(false);
+  const [profileDetails, setProfileDetails] = useState(null);
+  const [isCreatingOpening, setIsCreatingOpening] = useState(false);
+  const [openingError, setOpeningError] = useState(null);
 
   useEffect(() => {
     const init = async () => {
@@ -98,8 +106,67 @@ const SelectPOSProfile = () => {
         return;
       }
 
-      // Persist selected profile for later API calls (items search needs it)
+      // Persist selected profile for later API calls
       await savePOSProfile(selectedProfile);
+
+      // Check if there's already a valid opening entry for today
+      if (isOnline()) {
+        const session = await getLoginSession();
+        
+        try {
+          const openingEntryResponse = await checkOpeningEntry(session.email);
+          
+          // Check if response has data and period_start_date
+          if (openingEntryResponse && Array.isArray(openingEntryResponse) && openingEntryResponse.length > 0) {
+            const openingEntry = openingEntryResponse[0];
+            
+            if (openingEntry.period_start_date) {
+              // Parse the period_start_date and check if it's from today
+              const periodStartDate = new Date(openingEntry.period_start_date);
+              const today = new Date();
+              
+              // Reset time to midnight for accurate date comparison
+              periodStartDate.setHours(0, 0, 0, 0);
+              today.setHours(0, 0, 0, 0);
+              
+              // If the opening entry is from today, navigate directly to POS
+              if (periodStartDate.getTime() === today.getTime()) {
+                console.log('Valid opening entry exists for today, navigating to POS');
+                navigate('/pos');
+                return;
+              }
+            }
+          }
+        } catch (openingEntryError) {
+          console.error('Error checking opening entry:', openingEntryError);
+          // Continue to show opening entry modal if check fails
+        }
+
+        // No valid opening entry exists, fetch profile details and show modal
+        const details = await getPOSProfileDetails(selectedProfile);
+        setProfileDetails(details);
+        setShowOpeningModal(true);
+      } else {
+        // In offline mode, navigate directly to POS
+        navigate('/pos');
+      }
+    } catch (err) {
+      console.error('Error fetching profile details:', err);
+      setError(err.message || 'Failed to load profile details.');
+    }
+  };
+
+  const handleOpeningSubmit = async (balanceDetails) => {
+    try {
+      setIsCreatingOpening(true);
+      setOpeningError(null);
+
+      // Create opening voucher
+      await createOpeningVoucher(
+        selectedProfile,
+        profileDetails.company,
+        balanceDetails
+      );
 
       // Prefetch/cache required data for offline mode
       // - POS Profile data (allowed profiles etc.)
@@ -167,10 +234,14 @@ const SelectPOSProfile = () => {
         await saveProducts(items);
       }
 
+      // Close modal and navigate to POS
+      setShowOpeningModal(false);
       navigate('/pos');
     } catch (err) {
-      console.error('Error saving POS profile:', err);
-      setError(err?.message || 'Failed to save POS profile / offline data. Please try again.');
+      console.error('Error creating opening entry:', err);
+      setOpeningError(err?.message || 'Failed to create opening entry. Please try again.');
+    } finally {
+      setIsCreatingOpening(false);
     }
   };
 
@@ -221,12 +292,19 @@ const SelectPOSProfile = () => {
           </button>
         </div>
       </div>
+
+      <POSOpeningEntryModal
+        isOpen={showOpeningModal}
+        onClose={() => setShowOpeningModal(false)}
+        onSubmit={handleOpeningSubmit}
+        company={profileDetails?.company || ''}
+        posProfile={selectedProfile}
+        paymentMethods={profileDetails?.payments || []}
+        isLoading={isCreatingOpening}
+        error={openingError}
+      />
     </div>
   );
 };
 
 export default SelectPOSProfile;
-
-
-
-
