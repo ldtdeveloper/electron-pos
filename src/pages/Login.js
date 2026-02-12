@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login } from '../services/api';
+import { login, checkOpeningEntry, getPOSClosingDataByOpeningEntry, savePOSClosingEntry } from '../services/api';
 import { saveSetting, saveLoginSession } from '../services/storage';
 import { setApiBaseURL, updateSavedCredentials } from '../services/api';
+import OutdatedEntryModal from '../components/OutdatedEntryModal';
 import './Login.css';
 
 const Login = () => {
@@ -11,6 +12,10 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showOutdatedModal, setShowOutdatedModal] = useState(false);
+  const [isClosingEntry, setIsClosingEntry] = useState(false);
+  const [closingError, setClosingError] = useState(null);
+  const [userEmail, setUserEmail] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -68,6 +73,48 @@ const Login = () => {
           updateSavedCredentials(loginData.api_key, loginData.api_secret);
         }
         
+        // Check POS opening entry before proceeding
+        try {
+          const openingEntryResponse = await checkOpeningEntry(loginData.email);
+          console.log('Opening entry response:', openingEntryResponse);
+          
+          // Check if response has data and period_start_date
+          if (openingEntryResponse && Array.isArray(openingEntryResponse) && openingEntryResponse.length > 0) {
+            const openingEntry = openingEntryResponse[0];
+            console.log('Opening entry:', openingEntry);
+            
+            if (openingEntry.period_start_date) {
+              // Parse the period_start_date and check if it's from a previous day
+              const periodStartDate = new Date(openingEntry.period_start_date);
+              const today = new Date();
+              
+              console.log('Period start date (original):', openingEntry.period_start_date);
+              console.log('Period start date (parsed):', periodStartDate);
+              console.log('Today:', today);
+              
+              // Reset time to midnight for accurate date comparison
+              periodStartDate.setHours(0, 0, 0, 0);
+              today.setHours(0, 0, 0, 0);
+              
+              console.log('Period start date (midnight):', periodStartDate);
+              console.log('Today (midnight):', today);
+              console.log('Is outdated?', periodStartDate < today);
+              
+              // If the opening entry is from a previous day, show error modal
+              if (periodStartDate < today) {
+                console.log('Showing outdated modal');
+                setUserEmail(loginData.email); // Store email for closing entry
+                setShowOutdatedModal(true);
+                setIsLoading(false); // Stop loading state
+                return;
+              }
+            }
+          }
+        } catch (openingEntryError) {
+          console.error('Error checking opening entry:', openingEntryError);
+          // Continue to POS profile selection even if opening entry check fails
+        }
+        
         // Navigate to POS profile selection screen after successful login
         navigate('/select-pos-profile');
       } else {
@@ -84,6 +131,104 @@ const Login = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleCloseEntry = async () => {
+    try {
+      setIsClosingEntry(true);
+      setClosingError(null);
+
+      // Step 1: Get the opening entry name
+      const openingEntryResponse = await checkOpeningEntry(userEmail);
+      
+      if (!openingEntryResponse || !Array.isArray(openingEntryResponse) || openingEntryResponse.length === 0) {
+        setClosingError('No opening entry found.');
+        return;
+      }
+
+      const openingEntryName = openingEntryResponse[0].name;
+
+      // Step 2: Get closing data
+      const closingData = await getPOSClosingDataByOpeningEntry(openingEntryName);
+
+      if (!closingData || !closingData.opening_entry) {
+        setClosingError('Failed to fetch closing data.');
+        return;
+      }
+
+      // Step 3: Build closing entry document
+      const closingDoc = {
+        doctype: 'POS Closing Entry',
+        pos_opening_entry: closingData.opening_entry.name,
+        period_start_date: closingData.period.start_date,
+        period_end_date: closingData.period.end_date,
+        posting_date: closingData.opening_entry.posting_date,
+        pos_profile: closingData.pos_profile,
+        user: closingData.user,
+        company: closingData.company,
+        grand_total: closingData.totals?.grand_total || 0,
+        net_total: closingData.totals?.net_total || 0,
+        total_quantity: closingData.totals?.total_quantity || 0,
+        total_taxes_and_charges: closingData.totals?.total_taxes_and_charges || 0,
+        
+        // Payment reconciliation
+        payment_reconciliation: (closingData.payment_reconciliation || []).map((payment, idx) => ({
+          idx: idx + 1,
+          mode_of_payment: payment.mode_of_payment,
+          opening_amount: payment.opening_amount || 0,
+          expected_amount: payment.expected_amount || 0,
+          closing_amount: payment.closing_amount || 0,
+          difference: payment.difference || 0,
+          doctype: 'POS Closing Entry Detail',
+        })),
+        
+        // Taxes
+        taxes: (closingData.taxes || []).map((tax, idx) => ({
+          idx: idx + 1,
+          account_head: tax.account_head,
+          tax_amount: tax.tax_amount || 0,
+          doctype: 'POS Closing Entry Taxes',
+        })),
+        
+        // Sales invoices
+        sales_invoices: (closingData.invoices?.sales_invoices || []).map((invoice, idx) => ({
+          idx: idx + 1,
+          sales_invoice: invoice.invoice_name,
+          grand_total: invoice.grand_total || 0,
+          customer: invoice.customer,
+          posting_date: invoice.posting_date,
+          doctype: 'POS Closing Entry Invoice',
+        })),
+        
+        // POS invoices
+        pos_invoices: (closingData.invoices?.pos_invoices || []).map((invoice, idx) => ({
+          idx: idx + 1,
+          pos_invoice: invoice.invoice_name,
+          grand_total: invoice.grand_total || 0,
+          customer: invoice.customer,
+          posting_date: invoice.posting_date,
+          doctype: 'POS Closing Entry Invoice',
+        })),
+      };
+
+      // Step 4: Submit the closing entry
+      await savePOSClosingEntry(closingDoc, 'Submit');
+
+      // Step 5: Close modal and navigate to POS profile selection
+      setShowOutdatedModal(false);
+      navigate('/select-pos-profile');
+    } catch (err) {
+      console.error('Error closing entry:', err);
+      setClosingError(err.message || 'Failed to close POS opening entry. Please try again.');
+    } finally {
+      setIsClosingEntry(false);
+    }
+  };
+
+  const handleCancelModal = () => {
+    setShowOutdatedModal(false);
+    setClosingError(null);
+    // User stays on login page
   };
 
   return (
@@ -132,6 +277,14 @@ const Login = () => {
           </button>
         </form>
       </div>
+
+      <OutdatedEntryModal 
+        isOpen={showOutdatedModal}
+        onClose={handleCloseEntry}
+        onCancel={handleCancelModal}
+        isLoading={isClosingEntry}
+        error={closingError}
+      />
     </div>
   );
 };

@@ -281,6 +281,33 @@ export const fetchPOSProfileData = async (email) => {
   }
 };
 
+// Get POS profile data using POS endpoint
+
+export const getPOSProfileData = async (posProfile) => {
+  try {
+    const client = await createAuthenticatedClient();
+
+    // Create form data
+    const formData = new URLSearchParams();
+    formData.append('pos_profile', posProfile);
+
+    const response = await client.post(
+      '/api/method/erpnext.selling.page.point_of_sale.point_of_sale.get_pos_profile_data',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      }
+    );
+
+    return response.data?.message || response.data;
+  } catch (error) {
+    console.error('Error getting POS profile data:', error);
+    throw error;
+  }
+};
+
 
 // Submit sales invoice to ERPNext
 export const submitSalesInvoice = async (invoiceData) => {
@@ -313,3 +340,80 @@ export const submitSalesInvoice = async (invoiceData) => {
   }
 };
 
+// Check POS opening entry for a user
+export const checkOpeningEntry = async (user) => {
+  try {
+    const client = await createAuthenticatedClient();
+
+    const formData = new URLSearchParams();
+    formData.append('user', user);
+
+    const response = await client.post(
+      '/api/method/erpnext.selling.page.point_of_sale.point_of_sale.check_opening_entry',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      }
+    );
+
+    return response.data?.message || response.data;
+  } catch (error) {
+    console.error('Error checking opening entry:', error);
+    throw error;
+  }
+};
+
+
+
+// Get POS closing data by opening entry
+export const getPOSClosingDataByOpeningEntry = async (posOpeningEntry) => {
+  try {
+    const client = await createAuthenticatedClient();
+
+    const response = await client.post(
+      '/api/method/frappe.core.doctype.user.custom.get_pos_closing_data_by_opening_entry',
+      { pos_opening_entry: posOpeningEntry },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return response.data?.message || response.data;
+  } catch (error) {
+    console.error('Error getting POS closing data by opening entry:', error);
+    throw error;
+  }
+};
+
+// Save (or Submit) a POS Closing Entry doc via Frappe savedocs endpoint
+// action: 'Save' | 'Submit' | 'Update' (defaults to 'Save')
+export const savePOSClosingEntry = async (doc, action = 'Save') => {
+  try {
+    const client = await createAuthenticatedClient();
+
+    const formData = new URLSearchParams();
+    formData.append('doc', JSON.stringify(doc));
+    formData.append('action', action);
+
+    const response = await client.post(
+      '/api/method/frappe.desk.form.save.savedocs',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return response.data?.message || response.data;
+  } catch (error) {
+    console.error('Error saving POS closing entry:', error);
+    throw error;
+  }
+};
