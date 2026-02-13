@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login, checkOpeningEntry, getPOSClosingDataByOpeningEntry, savePOSClosingEntry } from '../services/api';
-import { saveSetting, saveLoginSession } from '../services/storage';
+import { login, checkOpeningEntry, getPOSClosingDataByOpeningEntry, savePOSClosingEntry, searchCustomersFromERPNext, searchProductsFromERPNext, fetchPOSProfileData, getPOSProfileDetails } from '../services/api';
+import { saveSetting, saveLoginSession, saveCustomers, saveProducts, savePOSProfile, savePOSProfileData, getPOSProfileData, getPriceList, savePriceList, getPOSProfile } from '../services/storage';
 import { setApiBaseURL, updateSavedCredentials } from '../services/api';
 import OutdatedEntryModal from '../components/OutdatedEntryModal';
+import { isOnline } from '../utils/onlineStatus';
 import './Login.css';
 
 const Login = () => {
@@ -108,6 +109,77 @@ const Login = () => {
                 setIsLoading(false); // Stop loading state
                 return;
               }
+              
+              // If the opening entry is from today, prefetch data and navigate to POS
+              if (periodStartDate.getTime() === today.getTime()) {
+                console.log('Valid opening entry exists for today, prefetching data...');
+                
+                // Prefetch customers and products before navigating
+                try {
+                  if (isOnline()) {
+                    // Get POS profile data
+                    let profileData = await fetchPOSProfileData(loginData.email);
+                    await savePOSProfileData(profileData);
+                    
+                    // Determine price list from POS profile
+                    let profileArray = [];
+                    if (Array.isArray(profileData)) {
+                      profileArray = profileData;
+                    } else if (Array.isArray(profileData?.data)) {
+                      profileArray = profileData.data;
+                    } else if (Array.isArray(profileData?.profiles)) {
+                      profileArray = profileData.profiles;
+                    } else if (Array.isArray(profileData?.pos_profiles)) {
+                      profileArray = profileData.pos_profiles;
+                    } else if (Array.isArray(profileData?.allowed_pos_profiles)) {
+                      profileArray = profileData.allowed_pos_profiles;
+                    }
+                    
+                    // Get the POS profile from opening entry
+                    const posProfile = openingEntry.pos_profile;
+                    await savePOSProfile(posProfile);
+                    
+                    const selectedProfileObj = profileArray.find(
+                      (p) =>
+                        (typeof p === 'object' && (p.name === posProfile || p.pos_profile === posProfile)) ||
+                        p === posProfile
+                    );
+                    
+                    const priceListFromProfile =
+                      (selectedProfileObj && selectedProfileObj.selling_price_list) || '';
+                    
+                    if (priceListFromProfile) {
+                      await savePriceList(priceListFromProfile);
+                    }
+                    
+                    // Prefetch customers
+                    console.log('Prefetching customers...');
+                    const customers = await searchCustomersFromERPNext('', 10000);
+                    await saveCustomers(customers);
+                    console.log(`Prefetched ${customers.length} customers`);
+                    
+                    // Prefetch products
+                    console.log('Prefetching products...');
+                    const effectivePriceList = priceListFromProfile || '';
+                    const items = await searchProductsFromERPNext(
+                      '',
+                      posProfile,
+                      effectivePriceList,
+                      '',
+                      0,
+                      10000
+                    );
+                    await saveProducts(items);
+                    console.log(`Prefetched ${items.length} products`);
+                  }
+                } catch (prefetchError) {
+                  console.error('Error prefetching data:', prefetchError);
+                  // Continue to POS even if prefetch fails
+                }
+                
+                navigate('/pos');
+                return;
+              }
             }
           }
         } catch (openingEntryError) {
@@ -115,7 +187,7 @@ const Login = () => {
           // Continue to POS profile selection even if opening entry check fails
         }
         
-        // Navigate to POS profile selection screen after successful login
+        // No valid opening entry - navigate to POS profile selection screen
         navigate('/select-pos-profile');
       } else {
         const errorMessage =

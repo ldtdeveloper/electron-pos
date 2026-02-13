@@ -182,44 +182,8 @@ const SelectPOSProfile = () => {
       // Persist selected profile for later API calls
       await savePOSProfile(selectedProfile);
 
-      // Check if there's already a valid opening entry for today
+      // Always fetch profile details and show opening entry modal
       if (isOnline()) {
-        const session = await getLoginSession();
-        
-        try {
-          const openingEntryResponse = await checkOpeningEntry(session.email);
-          
-          // Check if response has data and period_start_date
-          if (openingEntryResponse && Array.isArray(openingEntryResponse) && openingEntryResponse.length > 0) {
-            const openingEntry = openingEntryResponse[0];
-            
-            if (openingEntry.period_start_date) {
-              // Parse the period_start_date and check if it's from today
-              const periodStartDate = new Date(openingEntry.period_start_date);
-              const today = new Date();
-              
-              // Reset time to midnight for accurate date comparison
-              periodStartDate.setHours(0, 0, 0, 0);
-              today.setHours(0, 0, 0, 0);
-              
-              // If the opening entry is from today, navigate directly to POS
-              if (periodStartDate.getTime() === today.getTime()) {
-                console.log('Valid opening entry exists for today, prefetching data...');
-                
-                // Always prefetch fresh data before navigating to POS
-                await prefetchData();
-                
-                navigate('/pos');
-                return;
-              }
-            }
-          }
-        } catch (openingEntryError) {
-          console.error('Error checking opening entry:', openingEntryError);
-          // Continue to show opening entry modal if check fails
-        }
-
-        // No valid opening entry exists, fetch profile details and show modal
         const details = await getPOSProfileDetails(selectedProfile);
         setProfileDetails(details);
         setShowOpeningModal(true);
