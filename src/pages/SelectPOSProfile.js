@@ -197,6 +197,24 @@ const SelectPOSProfile = () => {
     }
   };
 
+  const handleProfileChangeInModal = async (newProfile) => {
+    setSelectedProfile(newProfile);
+    await savePOSProfile(newProfile);
+    
+    // Fetch new profile details for the selected profile
+    try {
+      const details = await getPOSProfileDetails(newProfile);
+      setProfileDetails(details);
+    } catch (err) {
+      console.error('Error fetching new profile details:', err);
+    }
+  };
+
+  const handleBackToLogin = () => {
+    setShowOpeningModal(false);
+    navigate('/login');
+  };
+
   const handleOpeningSubmit = async (balanceDetails) => {
     try {
       setIsCreatingOpening(true);
@@ -275,8 +293,11 @@ const SelectPOSProfile = () => {
         isOpen={showOpeningModal}
         onClose={() => setShowOpeningModal(false)}
         onSubmit={handleOpeningSubmit}
+        onBackToLogin={handleBackToLogin}
+        onProfileChange={handleProfileChangeInModal}
         company={profileDetails?.company || ''}
         posProfile={selectedProfile}
+        profiles={profiles}
         paymentMethods={profileDetails?.payments || []}
         isLoading={isCreatingOpening}
         error={openingError}

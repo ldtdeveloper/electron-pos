@@ -5,8 +5,11 @@ const POSOpeningEntryModal = ({
   isOpen, 
   onClose, 
   onSubmit, 
+  onBackToLogin,
   company, 
   posProfile, 
+  profiles = [],
+  onProfileChange,
   paymentMethods,
   isLoading = false,
   error = null 
@@ -75,12 +78,27 @@ const POSOpeningEntryModal = ({
               <label className="field-label">
                 POS Profile <span className="required">*</span>
               </label>
-              <input
-                type="text"
-                className="field-input disabled"
-                value={posProfile}
-                disabled
-              />
+              {profiles.length > 0 ? (
+                <select
+                  className="field-input"
+                  value={posProfile}
+                  onChange={(e) => onProfileChange && onProfileChange(e.target.value)}
+                  disabled={isLoading}
+                >
+                  {profiles.map((profile) => (
+                    <option key={profile} value={profile}>
+                      {profile}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className="field-input disabled"
+                  value={posProfile}
+                  disabled
+                />
+              )}
             </div>
 
             {/* Opening Balance Details */}
@@ -134,6 +152,14 @@ const POSOpeningEntryModal = ({
           </div>
 
           <div className="pos-opening-footer">
+            <button
+              type="button"
+              className="back-button"
+              onClick={onBackToLogin}
+              disabled={isLoading}
+            >
+              Back to Login
+            </button>
             <button
               type="submit"
               className="submit-button"

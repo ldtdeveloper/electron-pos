@@ -204,11 +204,14 @@
 .pos-opening-footer {
   padding: 1rem 1.75rem 1.5rem 1.75rem;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
   border-top: 1px solid #e5e7eb;
 }
 
+.back-button,
 .submit-button {
+  flex: 1;
   padding: 0.75rem 2rem;
   border-radius: 8px;
   border: none;
@@ -221,20 +224,25 @@
   transition: transform 0.05s ease, box-shadow 0.15s ease;
 }
 
+.back-button:hover:not(:disabled),
 .submit-button:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(79, 70, 229, 0.4);
 }
 
+.back-button:active:not(:disabled),
 .submit-button:active:not(:disabled) {
   transform: translateY(0);
 }
 
+.back-button:disabled,
 .submit-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
 }
+
+
 
 @media (max-width: 768px) {
   .pos-opening-content {

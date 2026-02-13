@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login, checkOpeningEntry, getPOSClosingDataByOpeningEntry, savePOSClosingEntry, searchCustomersFromERPNext, searchProductsFromERPNext, fetchPOSProfileData, getPOSProfileDetails } from '../services/api';
+import { login, checkOpeningEntry, getPOSClosingDataByOpeningEntry, savePOSClosingEntry, searchCustomersFromERPNext, searchProductsFromERPNext, fetchPOSProfileData, getPOSProfileDetails, createOpeningVoucher } from '../services/api';
 import { saveSetting, saveLoginSession, saveCustomers, saveProducts, savePOSProfile, savePOSProfileData, getPOSProfileData, getPriceList, savePriceList, getPOSProfile } from '../services/storage';
 import { setApiBaseURL, updateSavedCredentials } from '../services/api';
 import OutdatedEntryModal from '../components/OutdatedEntryModal';
+import POSOpeningEntryModal from '../components/POSOpeningEntryModal';
 import { isOnline } from '../utils/onlineStatus';
 import './Login.css';
 
@@ -17,6 +18,14 @@ const Login = () => {
   const [isClosingEntry, setIsClosingEntry] = useState(false);
   const [closingError, setClosingError] = useState(null);
   const [userEmail, setUserEmail] = useState(null);
+  
+  // Opening entry modal state
+  const [showOpeningModal, setShowOpeningModal] = useState(false);
+  const [profiles, setProfiles] = useState([]);
+  const [selectedProfile, setSelectedProfile] = useState('');
+  const [profileDetails, setProfileDetails] = useState(null);
+  const [isCreatingOpening, setIsCreatingOpening] = useState(false);
+  const [openingError, setOpeningError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -184,11 +193,48 @@ const Login = () => {
           }
         } catch (openingEntryError) {
           console.error('Error checking opening entry:', openingEntryError);
-          // Continue to POS profile selection even if opening entry check fails
+          // Continue to show opening entry modal even if opening entry check fails
         }
         
-        // No valid opening entry - navigate to POS profile selection screen
-        navigate('/select-pos-profile');
+        // No valid opening entry - fetch profiles and show opening entry modal
+        try {
+          const profileData = await fetchPOSProfileData(loginData.email);
+          await savePOSProfileData(profileData);
+          
+          let availableProfiles = [];
+          if (Array.isArray(profileData)) {
+            availableProfiles = profileData;
+          } else if (Array.isArray(profileData?.profiles)) {
+            availableProfiles = profileData.profiles;
+          } else if (Array.isArray(profileData?.pos_profiles)) {
+            availableProfiles = profileData.pos_profiles;
+          } else if (Array.isArray(profileData?.allowed_pos_profiles)) {
+            availableProfiles = profileData.allowed_pos_profiles;
+          }
+          
+          const profileList = availableProfiles
+            .map((p) => (typeof p === 'string' ? p : p?.name || p?.pos_profile))
+            .filter(Boolean);
+          
+          const uniqueProfiles = Array.from(new Set(profileList));
+          setProfiles(uniqueProfiles);
+          
+          if (uniqueProfiles.length > 0) {
+            const firstProfile = uniqueProfiles[0];
+            setSelectedProfile(firstProfile);
+            await savePOSProfile(firstProfile);
+            
+            // Fetch profile details for the first profile
+            const details = await getPOSProfileDetails(firstProfile);
+            setProfileDetails(details);
+            
+            // Show opening entry modal
+            setShowOpeningModal(true);
+          }
+        } catch (err) {
+          console.error('Error loading profiles:', err);
+          setError('Failed to load POS profiles. Please try again.');
+        }
       } else {
         const errorMessage =
           (msg &&
@@ -304,6 +350,109 @@ const Login = () => {
     // User stays on login page
   };
 
+  const handleProfileChangeInModal = async (newProfile) => {
+    setSelectedProfile(newProfile);
+    await savePOSProfile(newProfile);
+    
+    // Fetch new profile details for the selected profile
+    try {
+      const details = await getPOSProfileDetails(newProfile);
+      setProfileDetails(details);
+    } catch (err) {
+      console.error('Error fetching new profile details:', err);
+    }
+  };
+
+  const handleBackToLoginFromModal = () => {
+    setShowOpeningModal(false);
+    setOpeningError(null);
+    // User stays on login page
+  };
+
+  const handleOpeningSubmit = async (balanceDetails) => {
+    try {
+      setIsCreatingOpening(true);
+      setOpeningError(null);
+
+      // Create opening voucher
+      await createOpeningVoucher(
+        selectedProfile,
+        profileDetails.company,
+        balanceDetails
+      );
+
+      // Prefetch data
+      if (isOnline()) {
+        try {
+          const session = await import('../services/storage').then(m => m.getLoginSession());
+          const loginData = await session;
+          
+          // Get POS profile data
+          let profileData = await fetchPOSProfileData(loginData.email);
+          await savePOSProfileData(profileData);
+          
+          // Determine price list from POS profile
+          let profileArray = [];
+          if (Array.isArray(profileData)) {
+            profileArray = profileData;
+          } else if (Array.isArray(profileData?.data)) {
+            profileArray = profileData.data;
+          } else if (Array.isArray(profileData?.profiles)) {
+            profileArray = profileData.profiles;
+          } else if (Array.isArray(profileData?.pos_profiles)) {
+            profileArray = profileData.pos_profiles;
+          } else if (Array.isArray(profileData?.allowed_pos_profiles)) {
+            profileArray = profileData.allowed_pos_profiles;
+          }
+          
+          const selectedProfileObj = profileArray.find(
+            (p) =>
+              (typeof p === 'object' && (p.name === selectedProfile || p.pos_profile === selectedProfile)) ||
+              p === selectedProfile
+          );
+          
+          const priceListFromProfile =
+            (selectedProfileObj && selectedProfileObj.selling_price_list) || '';
+          
+          if (priceListFromProfile) {
+            await savePriceList(priceListFromProfile);
+          }
+          
+          // Prefetch customers
+          console.log('Prefetching customers...');
+          const customers = await searchCustomersFromERPNext('', 10000);
+          await saveCustomers(customers);
+          console.log(`Prefetched ${customers.length} customers`);
+          
+          // Prefetch products
+          console.log('Prefetching products...');
+          const effectivePriceList = priceListFromProfile || '';
+          const items = await searchProductsFromERPNext(
+            '',
+            selectedProfile,
+            effectivePriceList,
+            '',
+            0,
+            10000
+          );
+          await saveProducts(items);
+          console.log(`Prefetched ${items.length} products`);
+        } catch (prefetchError) {
+          console.error('Error prefetching data:', prefetchError);
+        }
+      }
+
+      // Close modal and navigate to POS
+      setShowOpeningModal(false);
+      navigate('/pos');
+    } catch (err) {
+      console.error('Error creating opening entry:', err);
+      setOpeningError(err?.message || 'Failed to create opening entry. Please try again.');
+    } finally {
+      setIsCreatingOpening(false);
+    }
+  };
+
   return (
     <div className="login-container">
       <div className="login-card">
@@ -357,6 +506,20 @@ const Login = () => {
         onCancel={handleCancelModal}
         isLoading={isClosingEntry}
         error={closingError}
+      />
+
+      <POSOpeningEntryModal
+        isOpen={showOpeningModal}
+        onClose={() => setShowOpeningModal(false)}
+        onSubmit={handleOpeningSubmit}
+        onBackToLogin={handleBackToLoginFromModal}
+        onProfileChange={handleProfileChangeInModal}
+        company={profileDetails?.company || ''}
+        posProfile={selectedProfile}
+        profiles={profiles}
+        paymentMethods={profileDetails?.payments || []}
+        isLoading={isCreatingOpening}
+        error={openingError}
       />
     </div>
   );
