@@ -99,6 +99,79 @@ const SelectPOSProfile = () => {
     init();
   }, [navigate]);
 
+  // Helper function to prefetch customers and products data
+  const prefetchData = async () => {
+    if (!isOnline()) {
+      return; // Skip prefetching in offline mode
+    }
+
+    try {
+      const session = await getLoginSession();
+      
+      // Fetch and save POS profile data
+      let profileData = null;
+      if (session?.email) {
+        profileData = await fetchPOSProfileData(session.email);
+        await savePOSProfileData(profileData);
+      }
+
+      // Determine price list from selected POS profile
+      if (!profileData) {
+        profileData = await getPOSProfileData();
+      }
+
+      let profileArray = [];
+      if (Array.isArray(profileData)) {
+        profileArray = profileData;
+      } else if (Array.isArray(profileData?.data)) {
+        profileArray = profileData.data;
+      } else if (Array.isArray(profileData?.profiles)) {
+        profileArray = profileData.profiles;
+      } else if (Array.isArray(profileData?.pos_profiles)) {
+        profileArray = profileData.pos_profiles;
+      } else if (Array.isArray(profileData?.allowed_pos_profiles)) {
+        profileArray = profileData.allowed_pos_profiles;
+      }
+
+      const selectedProfileObj = profileArray.find(
+        (p) =>
+          (typeof p === 'object' && (p.name === selectedProfile || p.pos_profile === selectedProfile)) ||
+          p === selectedProfile
+      );
+
+      const priceListFromProfile =
+        (selectedProfileObj && selectedProfileObj.selling_price_list) || '';
+
+      // Save price list derived from POS profile
+      if (priceListFromProfile) {
+        await savePriceList(priceListFromProfile);
+      }
+
+      // Prefetch customers
+      console.log('Prefetching customers...');
+      const customers = await searchCustomersFromERPNext('', 10000);
+      await saveCustomers(customers);
+      console.log(`Prefetched ${customers.length} customers`);
+
+      // Prefetch products/items
+      console.log('Prefetching products...');
+      const effectivePriceList = priceListFromProfile || (await getPriceList()) || '';
+      const items = await searchProductsFromERPNext(
+        '',
+        selectedProfile,
+        effectivePriceList,
+        '',
+        0,
+        10000
+      );
+      await saveProducts(items);
+      console.log(`Prefetched ${items.length} products`);
+    } catch (error) {
+      console.error('Error prefetching data:', error);
+      // Don't throw - allow navigation to continue even if prefetch fails
+    }
+  };
+
   const handleContinue = async () => {
     try {
       if (!selectedProfile) {
@@ -131,7 +204,11 @@ const SelectPOSProfile = () => {
               
               // If the opening entry is from today, navigate directly to POS
               if (periodStartDate.getTime() === today.getTime()) {
-                console.log('Valid opening entry exists for today, navigating to POS');
+                console.log('Valid opening entry exists for today, prefetching data...');
+                
+                // Always prefetch fresh data before navigating to POS
+                await prefetchData();
+                
                 navigate('/pos');
                 return;
               }
@@ -168,71 +245,8 @@ const SelectPOSProfile = () => {
         balanceDetails
       );
 
-      // Prefetch/cache required data for offline mode
-      // - POS Profile data (allowed profiles etc.)
-      // - Customers
-      // - Products/Items (for selected POS profile)
-      // - Price list from the selected POS profile
-      if (isOnline()) {
-        const session = await getLoginSession();
-        let profileData = null;
-        if (session?.email) {
-          profileData = await fetchPOSProfileData(session.email);
-          await savePOSProfileData(profileData);
-        }
-
-        // Determine price list from selected POS profile
-        // profileData can be:
-        // - array of profiles
-        // - or an object with data/message holding the array
-        if (!profileData) {
-          profileData = await getPOSProfileData();
-        }
-
-        let profileArray = [];
-        if (Array.isArray(profileData)) {
-          profileArray = profileData;
-        } else if (Array.isArray(profileData?.data)) {
-          profileArray = profileData.data;
-        } else if (Array.isArray(profileData?.profiles)) {
-          profileArray = profileData.profiles;
-        } else if (Array.isArray(profileData?.pos_profiles)) {
-          profileArray = profileData.pos_profiles;
-        } else if (Array.isArray(profileData?.allowed_pos_profiles)) {
-          profileArray = profileData.allowed_pos_profiles;
-        }
-
-        const selectedProfileObj = profileArray.find(
-          (p) =>
-            (typeof p === 'object' && (p.name === selectedProfile || p.pos_profile === selectedProfile)) ||
-            p === selectedProfile
-        );
-
-        const priceListFromProfile =
-          (selectedProfileObj && selectedProfileObj.selling_price_list) || '';
-
-        // Save price list derived from POS profile for later searches
-        if (priceListFromProfile) {
-          await savePriceList(priceListFromProfile);
-        }
-
-        // Customers: use ERPNext search endpoint with empty txt + large page_length
-        const customers = await searchCustomersFromERPNext('', 10000);
-        await saveCustomers(customers);
-
-        // Items: use POS get_items endpoint with selected profile
-        const effectivePriceList = priceListFromProfile || (await getPriceList()) || '';
-        const items = await searchProductsFromERPNext(
-          '',
-          selectedProfile,
-          effectivePriceList,
-          '',
-          0,
-          10000
-        );
-        
-        await saveProducts(items);
-      }
+      // Always prefetch fresh data after creating opening entry
+      await prefetchData();
 
       // Close modal and navigate to POS
       setShowOpeningModal(false);
