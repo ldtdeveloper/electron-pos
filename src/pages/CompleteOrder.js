@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import usePOSStore from '../store/posStore';
+import { getDutiesAndTaxes, getPOSProfile, getPOSProfileData } from '../services/storage';
+import { calculateCartTax } from '../utils/taxCalculator';
+import { getCompanyState } from '../utils/companyState';
+import { isOnline } from '../utils/onlineStatus';
+import { submitAndPaySalesInvoicePOS } from '../services/api';
 import NumericKeypad from '../components/NumericKeypad';
 import InvoiceItemCart from '../components/InvoiceItemCart';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -9,28 +14,60 @@ import './CompleteOrder.css';
 
 const CompleteOrder = () => {
   const navigate = useNavigate();
-  const {
-    cart,
-    customer,
-    getCartSubtotal,
-    getCartTax,
-    getCartGrandTotal,
-    clearCart,
-  } = usePOSStore();
+  const location = useLocation();
+  const { cart, customer, clearCart } = usePOSStore();
+
+  // When coming from POS checkout in online mode, we may have an ERP Sales Invoice draft
+  const erpInvoice = location.state?.erpInvoice || null;
 
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [discountPercentage, setDiscountPercentage] = useState(0);
-  const [discountInput, setDiscountInput] = useState(''); // Raw input without %
+  const [discountInput, setDiscountInput] = useState('');
   const [redeemPoints, setRedeemPoints] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [invoiceNumber] = useState('SINV-26-00028'); // You can generate this dynamically
   const [receiptData, setReceiptData] = useState(null);
+  const [dutiesAndTaxes, setDutiesAndTaxes] = useState(null);
+  const [companyState, setCompanyState] = useState('');
 
-  const taxRate = 18; // IGST rate
-  const subtotal = getCartSubtotal();
-  const tax = getCartTax(taxRate);
-  const baseGrandTotal = getCartGrandTotal(taxRate);
+  useEffect(() => {
+    getDutiesAndTaxes().then(setDutiesAndTaxes);
+    getCompanyState(getPOSProfile, getPOSProfileData).then(setCompanyState);
+  }, []);
+
+  const taxResult = useMemo(() => {
+    if (!dutiesAndTaxes?.taxes?.length) {
+      const sub = cart.reduce((s, i) => s + (i.rate || 0) * (i.quantity || 0), 0);
+      return { subtotal: sub, totalTax: 0, grandTotal: sub };
+    }
+    return calculateCartTax(cart, customer, dutiesAndTaxes, companyState);
+  }, [cart, customer, dutiesAndTaxes, companyState]);
+
+  // Base totals from local calculator
+  let { subtotal, totalTax: tax, grandTotal: baseGrandTotal, breakdown } = taxResult;
+
+  // If we have an ERP invoice (online), prefer its totals & taxes for display
+  const hasErpInvoice = isOnline() && erpInvoice;
+  if (hasErpInvoice) {
+    subtotal = erpInvoice.net_total ?? subtotal;
+    baseGrandTotal = erpInvoice.grand_total ?? baseGrandTotal;
+
+    const erpTaxes = Array.isArray(erpInvoice.taxes_and_charges_applied)
+      ? erpInvoice.taxes_and_charges_applied
+      : [];
+
+    if (erpTaxes.length > 0) {
+      tax =
+        erpInvoice.total_taxes_and_charges ??
+        erpTaxes.reduce((sum, t) => sum + (t.tax_amount || 0), 0);
+
+      breakdown = erpTaxes.map((t) => ({
+        label: t.description || t.account_head || 'Tax',
+        rate: t.rate ?? 0,
+        amount: t.tax_amount ?? 0,
+      }));
+    }
+  }
   const discountAmount = (baseGrandTotal * discountPercentage) / 100;
   const grandTotal = baseGrandTotal - discountAmount;
   
@@ -93,33 +130,41 @@ const CompleteOrder = () => {
     setShowConfirmModal(true);
   };
 
-  const handleConfirmSubmit = () => {
-    // Process the order after confirmation
-    console.log('Order completed successfully!');
-    // Here you can add your API call or order submission logic
-    // submitOrderToAPI(invoiceNumber, cart, grandTotal, etc.);
-    
-    // Prepare receipt data
+  const handleConfirmSubmit = async () => {
+    // Online mode with ERP invoice: submit & pay via API
+    if (hasErpInvoice) {
+      try {
+        await submitAndPaySalesInvoicePOS({
+          salesInvoice: erpInvoice.name,
+          modeOfPayment: 'Cash',
+        });
+      } catch (error) {
+        console.error('Failed to submit & pay Sales Invoice via API:', error);
+        alert('Failed to submit invoice to server. Showing local receipt.');
+      }
+    }
+
+    // Prepare receipt data (UI only)
     const receipt = {
       storeName: 'Rahul Builders Store',
-      invoiceNumber: invoiceNumber,
-      soldBy: 'akash@yopmail.com', // Get from user session/settings
+      invoiceNumber: (hasErpInvoice && erpInvoice.name) || 'DRAFT',
+      soldBy: 'akash@yopmail.com', // TODO: get from user session/settings
       customer: customer?.customer_name || 'Guest',
-      items: cart.map(item => ({
+      items: cart.map((item) => ({
         name: item.item_name || item.name,
         quantity: item.quantity,
         uom: item.uom || 'Kg',
-        amount: item.rate * item.quantity
+        amount: item.rate * item.quantity,
       })),
       netTotal: subtotal,
       tax: tax,
-      taxLabel: 'IGST',
+      taxLabel: breakdown?.some((b) => b.label === 'CGST') ? 'CGST + SGST' : 'IGST',
       grandTotal: grandTotal,
       paymentMethod: paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1),
       paidAmount: paidAmount,
-      status: 'Paid'
+      status: 'Paid',
     };
-    
+
     setReceiptData(receipt);
     setShowConfirmModal(false);
     setShowReceiptModal(true);
@@ -213,6 +258,7 @@ const CompleteOrder = () => {
             discountAmount={discountAmount}
             onEditCart={handleEditCart}
             onDiscountChange={handleDiscountChange}
+            erpInvoice={hasErpInvoice ? erpInvoice : null}
           />
         </div>
 
@@ -283,7 +329,7 @@ const CompleteOrder = () => {
         onClose={() => setShowConfirmModal(false)}
         onConfirm={handleConfirmSubmit}
         title="Confirm"
-        message={`Permanently Submit ${invoiceNumber}?`}
+        message="Permanently Submit?"
         confirmText="Yes"
         cancelText="No"
         confirmButtonColor="#2563eb"

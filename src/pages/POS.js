@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import usePOSStore from '../store/posStore';
-import { saveSalesInvoice, getSetting, getLoginSession, savePOSProfileData } from '../services/storage';
-import { syncInvoices } from '../services/syncService';
-import { updateSavedCredentials, setApiBaseURL, fetchPOSProfileData } from '../services/api';
+import { getLoginSession, savePOSProfileData, getDutiesAndTaxes, getPOSProfile, getPOSProfileData } from '../services/storage';
+import { performFullSync } from '../services/syncService';
+import { updateSavedCredentials, setApiBaseURL, fetchPOSProfileData, createSalesInvoicePOS } from '../services/api';
 import { isOnline, addOnlineListener, addOfflineListener } from '../utils/onlineStatus';
+import { calculateCartTax } from '../utils/taxCalculator';
+import { getCompanyState } from '../utils/companyState';
 import ProductList from '../components/ProductList';
 import Cart from '../components/Cart';
 import CustomerSearch from '../components/CustomerSearch';
@@ -19,6 +21,8 @@ const POS = () => {
     filteredProducts,
     isLoading,
     error,
+    itemsHasMore,
+    isLoadingMore,
     addToCart,
     removeFromCart,
     updateCartItemQuantity,
@@ -27,29 +31,30 @@ const POS = () => {
     clearCustomer,
     loadProducts,
     searchProducts,
-    getCartSubtotal,
-    getCartTax,
-    getCartGrandTotal,
+    loadMoreProducts,
   } = usePOSStore();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showSettings, setShowSettings] = useState(false);
-  const [taxRate, setTaxRate] = useState(0);
   const [onlineStatus, setOnlineStatus] = useState(isOnline());
   const [isSyncing, setIsSyncing] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [dutiesAndTaxes, setDutiesAndTaxes] = useState(null);
+  const [companyState, setCompanyState] = useState('');
 
   const handleAutoSync = useCallback(async () => {
     if (isOnline()) {
       setIsSyncing(true);
       try {
-        await syncInvoices();
+        await performFullSync();
+        loadProducts();
       } catch (error) {
         console.error('Auto-sync failed:', error);
       } finally {
         setIsSyncing(false);
       }
     }
-  }, []);
+  }, [loadProducts]);
 
   useEffect(() => {
     // Load saved login session and credentials
@@ -77,9 +82,9 @@ const POS = () => {
         return;
       }
       
-      // Load products and tax rate
       loadProducts();
-      loadTaxRate();
+      loadDutiesAndTaxes();
+      loadCompanyState();
       
       // Fetch and store POS profile data if online
       if (isOnline()) {
@@ -105,18 +110,43 @@ const POS = () => {
     };
   }, [handleAutoSync, navigate, loadProducts]);
 
-  const loadTaxRate = async () => {
-    const rate = await getSetting('tax_rate');
-    if (rate) {
-      setTaxRate(parseFloat(rate));
+  const loadDutiesAndTaxes = async () => {
+    try {
+      const data = await getDutiesAndTaxes();
+      if (data) setDutiesAndTaxes(data);
+    } catch (e) {
+      console.error('Error loading duties and taxes:', e);
     }
   };
+
+  const loadCompanyState = async () => {
+    const state = await getCompanyState(getPOSProfile, getPOSProfileData);
+    setCompanyState(state);
+  };
+
+  // Track previous customer to detect changes
+  const prevCustomerRef = useRef(customer?.name);
+  
+  // When customer changes, clear cart and refresh product list so prices use customer default_price_list or POS list
+  useEffect(() => {
+    const currentCustomerName = customer?.name;
+    const prevCustomerName = prevCustomerRef.current;
+    
+    // Clear cart when customer changes (but not on initial mount or when clearing customer)
+    if (prevCustomerName && currentCustomerName && prevCustomerName !== currentCustomerName) {
+      clearCart();
+    }
+    
+    prevCustomerRef.current = currentCustomerName;
+    searchProducts(searchTerm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer?.name]);
 
   const loadPOSProfileData = async () => {
     try {
       const session = await getLoginSession();
       if (!session?.email) return;
-      const profileData = await fetchPOSProfileData(session.email);
+      const profileData = await fetchPOSProfileData();
       await savePOSProfileData(profileData);
     } catch (error) {
       console.error('Error loading POS profile data:', error);
@@ -131,12 +161,62 @@ const POS = () => {
 
   const handleSyncComplete = () => {
     loadProducts();
-    loadTaxRate();
+    loadDutiesAndTaxes();
+    loadCompanyState();
   };
 
-  const subtotal = getCartSubtotal();
-  const tax = getCartTax(taxRate);
-  const grandTotal = getCartGrandTotal(taxRate);
+  // Recalculate taxes when customer changes (tax_category, state) or cart changes
+  const taxResult = useMemo(() => {
+    if (!dutiesAndTaxes?.taxes?.length) {
+      const sub = cart.reduce((s, i) => s + (i.rate || 0) * (i.quantity || 0), 0);
+      return { subtotal: sub, totalTax: 0, grandTotal: sub, breakdown: [] };
+    }
+    return calculateCartTax(cart, customer, dutiesAndTaxes, companyState);
+  }, [
+    cart,
+    customer?.name, // Customer identity
+    customer?.tax_category, // Affects Check 1
+    customer?.gst_category, // Affects Check 1
+    customer?.state, // Affects Check 4
+    customer?.gst_state, // Affects Check 4
+    customer?.address_state, // Affects Check 4
+    dutiesAndTaxes,
+    companyState,
+  ]);
+
+  const { subtotal, totalTax: tax, grandTotal, breakdown } = taxResult;
+
+  const handleCheckoutClick = async () => {
+    if (!customer) {
+      setToastMessage('Please select a customer first.');
+      setTimeout(() => {
+        setToastMessage('');
+      }, 2500);
+      return;
+    }
+
+    // If online, first create Sales Invoice via ERPNext API so that taxes come from backend
+    if (isOnline()) {
+      try {
+        const customerName = customer.customer_name || customer.name;
+        const erpInvoice = await createSalesInvoicePOS({
+          customerName,
+          // Company can be refined later from POS profile; using default for now
+          company: 'LDT TECH',
+          cartItems: cart,
+        });
+        navigate('/complete-order', { state: { erpInvoice } });
+        return;
+      } catch (error) {
+        console.error('Checkout: failed to create Sales Invoice via API, falling back to local totals.', error);
+        setToastMessage('Online invoice failed, using local totals.');
+        setTimeout(() => setToastMessage(''), 2500);
+      }
+    }
+
+    // Offline or API failure – fall back to existing behaviour
+    navigate('/complete-order');
+  };
 
   return (
     <div className="pos-container">
@@ -180,6 +260,14 @@ const POS = () => {
             products={filteredProducts}
             onAddToCart={addToCart}
             isLoading={isLoading}
+            hasMore={itemsHasMore}
+            onLoadMore={loadMoreProducts}
+            isLoadingMore={isLoadingMore}
+            disableAddToCart={!customer}
+            onAddToCartBlocked={() => {
+              setToastMessage('Please select a customer first.');
+              setTimeout(() => setToastMessage(''), 2500);
+            }}
           />
         </div>
 
@@ -201,6 +289,7 @@ const POS = () => {
             )}
           </div>
 
+          <div className="cart-wrapper">
           <Cart
             cart={cart}
             onUpdateQuantity={updateCartItemQuantity}
@@ -209,13 +298,15 @@ const POS = () => {
             subtotal={subtotal}
             tax={tax}
             grandTotal={grandTotal}
+            taxBreakdown={breakdown}
           />
+          </div>
           
           {cart.length > 0 && (
             <div className="cart-footer">
               <button
                 className="checkout-btn"
-                onClick={() => navigate('/complete-order')}
+                onClick={handleCheckoutClick}
               >
                 Checkout
               </button>
@@ -229,6 +320,11 @@ const POS = () => {
           onClose={() => setShowSettings(false)}
           onSyncComplete={handleSyncComplete}
         />
+      )}
+      {toastMessage && (
+        <div className="pos-toast">
+          {toastMessage}
+        </div>
       )}
     </div>
   );

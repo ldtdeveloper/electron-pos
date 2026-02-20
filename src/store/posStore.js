@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getProducts, searchProducts as searchProductsDB, getPOSProfile, getPriceList } from '../services/storage';
+import { getProducts, searchProducts as searchProductsDB, getPriceList } from '../services/storage';
 import { searchProductsFromERPNext } from '../services/api';
 import { isOnline } from '../utils/onlineStatus';
 
@@ -12,7 +12,10 @@ const usePOSStore = create((set, get) => ({
   products: [],
   filteredProducts: [],
   searchTerm: '',
-  
+  itemsTotal: 0,
+  itemsHasMore: false,
+  isLoadingMore: false,
+
   // UI state
   isLoading: false,
   error: null,
@@ -77,40 +80,85 @@ const usePOSStore = create((set, get) => ({
   },
   
   searchProducts: async (term) => {
-    set({ searchTerm: term });
-    if (!term) {
-      set({ filteredProducts: get().products });
-      return;
-    }
-    
-    try {
-      // If online, search from ERPNext API
+    set({ searchTerm: term ?? '' });
+    const effectiveTerm = term?.trim() ?? '';
+
+    const getEffectivePriceList = async () => {
+      const customer = get().customer;
+      const posPriceList = (await getPriceList()) || '';
+      return (customer?.default_price_list && String(customer.default_price_list).trim())
+        ? customer.default_price_list
+        : posPriceList;
+    };
+
+    // Empty term: show items with effective price list (customer default_price_list else POS profile)
+    if (!effectiveTerm) {
       if (isOnline()) {
         try {
-          const posProfile = await getPOSProfile();
-          const priceList = await getPriceList() || '';
-          
-          const results = await searchProductsFromERPNext(
-            term,
-            posProfile || '',
-            priceList,
-            '', // item_group - empty for all groups
-            0,  // start
-            20  // page_length
-          );
-          set({ filteredProducts: results });
+          const effectivePriceList = await getEffectivePriceList();
+          const res = await searchProductsFromERPNext('', effectivePriceList, 0, 20);
+          set({
+            filteredProducts: res.items,
+            itemsTotal: res.total ?? res.items.length,
+            itemsHasMore: res.has_more ?? false,
+          });
           return;
         } catch (apiError) {
-          console.warn('Online search failed, falling back to local:', apiError);
-          // Fall through to local search
+          console.warn('Fetch items with price list failed, using local:', apiError);
         }
       }
-      
-      // Offline or API failed - search local storage
-      const results = await searchProductsDB(term);
-      set({ filteredProducts: results });
+      const products = get().products;
+      set({ filteredProducts: products, itemsTotal: products.length, itemsHasMore: false });
+      return;
+    }
+
+    try {
+      if (isOnline()) {
+        try {
+          const effectivePriceList = await getEffectivePriceList();
+          const res = await searchProductsFromERPNext(effectiveTerm, effectivePriceList, 0, 20);
+          set({
+            filteredProducts: res.items,
+            itemsTotal: res.total ?? res.items.length,
+            itemsHasMore: res.has_more ?? false,
+          });
+          return;
+        } catch (apiError) {
+          console.warn('Online search failed, falling back to local DB:', apiError);
+        }
+      }
+
+      const results = await searchProductsDB(effectiveTerm);
+      set({ filteredProducts: results, itemsTotal: results.length, itemsHasMore: false });
     } catch (error) {
       set({ error: error.message });
+    }
+  },
+
+  loadMoreProducts: async () => {
+    const { searchTerm, filteredProducts, itemsHasMore, isLoadingMore, customer } = get();
+    if (!itemsHasMore || isLoadingMore || !isOnline()) return;
+
+    set({ isLoadingMore: true });
+    try {
+      const posPriceList = (await getPriceList()) || '';
+      const effectivePriceList = (customer?.default_price_list && String(customer.default_price_list).trim())
+        ? customer.default_price_list
+        : posPriceList;
+      const term = searchTerm?.trim() ?? '';
+      const res = await searchProductsFromERPNext(
+        term,
+        effectivePriceList,
+        filteredProducts.length,
+        20
+      );
+      set({
+        filteredProducts: [...filteredProducts, ...res.items],
+        itemsHasMore: res.has_more ?? false,
+        isLoadingMore: false,
+      });
+    } catch (error) {
+      set({ isLoadingMore: false, error: error.message });
     }
   },
   

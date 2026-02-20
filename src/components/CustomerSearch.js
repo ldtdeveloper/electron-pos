@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { searchCustomers } from '../services/storage';
-import { searchCustomersFromERPNext } from '../services/api';
+import { searchCustomersFromERPNext, createCustomer } from '../services/api';
 import { isOnline } from '../utils/onlineStatus';
 import './CustomerSearch.css';
 
@@ -9,6 +9,12 @@ const CustomerSearch = ({ selectedCustomer, onSelectCustomer, onClearCustomer })
   const [customers, setCustomers] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerEmail, setNewCustomerEmail] = useState('');
+  const [newCustomerPhone, setNewCustomerPhone] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
   const searchRef = useRef(null);
   const dropdownRef = useRef(null);
 
@@ -47,7 +53,7 @@ const CustomerSearch = ({ selectedCustomer, onSelectCustomer, onClearCustomer })
       // If online, search from ERPNext API
       if (isOnline()) {
         try {
-          results = await searchCustomersFromERPNext(term, 10);
+          results = await searchCustomersFromERPNext(term);
         } catch (apiError) {
           console.warn('Online customer search failed, falling back to local:', apiError);
           // Fall through to local search
@@ -74,13 +80,6 @@ const CustomerSearch = ({ selectedCustomer, onSelectCustomer, onClearCustomer })
     setIsOpen(false);
   };
 
-  const handleClear = () => {
-    setSearchTerm('');
-    setCustomers([]);
-    setIsOpen(false);
-    onClearCustomer();
-  };
-
   const handleInputChange = (e) => {
     setSearchTerm(e.target.value);
     if (!e.target.value) {
@@ -91,6 +90,53 @@ const CustomerSearch = ({ selectedCustomer, onSelectCustomer, onClearCustomer })
   const handleInputFocus = () => {
     if (customers.length > 0 && searchTerm.length > 0) {
       setIsOpen(true);
+    }
+  };
+
+  const openCreateDialog = () => {
+    setCreateError('');
+    setNewCustomerName(searchTerm || '');
+    setNewCustomerEmail('');
+    setNewCustomerPhone('');
+    setShowCreateDialog(true);
+  };
+
+  const closeCreateDialog = () => {
+    if (isCreating) return;
+    setShowCreateDialog(false);
+  };
+
+  const handleCreateCustomer = async (e) => {
+    e.preventDefault();
+
+    const name = newCustomerName.trim();
+    const phone = newCustomerPhone.trim();
+    const email = newCustomerEmail.trim();
+
+    if (!name || !phone) {
+      setCreateError('Name and phone number are required.');
+      return;
+    }
+
+    try {
+      setIsCreating(true);
+      setCreateError('');
+
+      const created = await createCustomer({
+        name,
+        email: email || null,
+        phone,
+      });
+
+      onSelectCustomer(created);
+      setSearchTerm(created.customer_name);
+      setCustomers([]);
+      setIsOpen(false);
+      setShowCreateDialog(false);
+    } catch (error) {
+      setCreateError(error.message || 'Failed to create customer.');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -105,18 +151,16 @@ const CustomerSearch = ({ selectedCustomer, onSelectCustomer, onClearCustomer })
           onFocus={handleInputFocus}
           className="customer-search-input"
         />
-        {selectedCustomer && (
-          <button
-            className="customer-clear-btn"
-            onClick={handleClear}
-            title="Clear customer"
-          >
-            ×
-          </button>
-        )}
         {isLoading && (
           <span className="customer-search-loading">⏳</span>
         )}
+        <button
+          type="button"
+          className="customer-create-btn"
+          onClick={openCreateDialog}
+        >
+          + Create
+        </button>
       </div>
       
       {isOpen && customers.length > 0 && (
@@ -139,6 +183,78 @@ const CustomerSearch = ({ selectedCustomer, onSelectCustomer, onClearCustomer })
       {isOpen && customers.length === 0 && searchTerm.length > 0 && !isLoading && (
         <div className="customer-dropdown">
           <div className="customer-dropdown-empty">No customers found</div>
+        </div>
+      )}
+
+      {showCreateDialog && (
+        <div className="customer-create-modal-backdrop">
+          <div className="customer-create-modal">
+            <h3 className="customer-create-title">Create Customer</h3>
+            <form onSubmit={handleCreateCustomer} className="customer-create-form">
+              <div className="customer-create-field">
+                <label className="customer-create-label">
+                  Name <span className="customer-create-required">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newCustomerName}
+                  onChange={(e) => setNewCustomerName(e.target.value)}
+                  className="customer-create-input"
+                  placeholder="Customer name"
+                />
+              </div>
+
+              <div className="customer-create-field">
+                <label className="customer-create-label">
+                  Phone Number <span className="customer-create-required">*</span>
+                </label>
+                <input
+                  type="tel"
+                  value={newCustomerPhone}
+                  onChange={(e) => setNewCustomerPhone(e.target.value)}
+                  className="customer-create-input"
+                  placeholder="Phone number"
+                />
+              </div>
+
+              <div className="customer-create-field">
+                <label className="customer-create-label">
+                  Email (optional)
+                </label>
+                <input
+                  type="email"
+                  value={newCustomerEmail}
+                  onChange={(e) => setNewCustomerEmail(e.target.value)}
+                  className="customer-create-input"
+                  placeholder="Email address"
+                />
+              </div>
+
+              {createError && (
+                <div className="customer-create-error">
+                  {createError}
+                </div>
+              )}
+
+              <div className="customer-create-actions">
+                <button
+                  type="button"
+                  className="customer-create-cancel-btn"
+                  onClick={closeCreateDialog}
+                  disabled={isCreating}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="customer-create-submit-btn"
+                  disabled={isCreating}
+                >
+                  {isCreating ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

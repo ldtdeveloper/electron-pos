@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login, checkOpeningEntry, getPOSClosingDataByOpeningEntry, savePOSClosingEntry, searchCustomersFromERPNext, searchProductsFromERPNext, fetchPOSProfileData, getPOSProfileDetails, createOpeningVoucher } from '../services/api';
-import { saveSetting, saveLoginSession, saveCustomers, saveProducts, savePOSProfile, savePOSProfileData, getPOSProfileData, getPriceList, savePriceList, getPOSProfile } from '../services/storage';
+import { login, checkOpeningEntry, getPOSClosingDataByOpeningEntry, savePOSClosingEntry, searchCustomersFromERPNext, searchProductsFromERPNext, fetchPOSProfileData, createOpeningVoucher, getDutiesAndTaxesList } from '../services/api';
+import { saveSetting, saveLoginSession, saveCustomers, saveProducts, savePOSProfile, savePOSProfileData, getPOSProfileData, getPriceList, savePriceList, getPOSProfile, saveDutiesAndTaxes } from '../services/storage';
 import { setApiBaseURL, updateSavedCredentials } from '../services/api';
 import OutdatedEntryModal from '../components/OutdatedEntryModal';
 import POSOpeningEntryModal from '../components/POSOpeningEntryModal';
@@ -22,6 +22,7 @@ const Login = () => {
   // Opening entry modal state
   const [showOpeningModal, setShowOpeningModal] = useState(false);
   const [profiles, setProfiles] = useState([]);
+  const [profileObjects, setProfileObjects] = useState([]);
   const [selectedProfile, setSelectedProfile] = useState('');
   const [profileDetails, setProfileDetails] = useState(null);
   const [isCreatingOpening, setIsCreatingOpening] = useState(false);
@@ -59,7 +60,7 @@ const Login = () => {
         // Normalise source of login data (sometimes nested under message)
         const src = msg && typeof msg === 'object' ? msg : response || {};
 
-        // Save full login response data locally
+        // Save full login response data locally (company from response.data for duties/taxes API)
         const loginData = {
           success_key: src.success_key ?? src.success ?? successValue,
           message: src.message,
@@ -68,6 +69,7 @@ const Login = () => {
           api_secret: response.data.api_secret,
           username: src.username,
           email: response.data.email,
+          company: response.data.company,
           base_url: src.base_url || 'http://192.168.1.81:8000',
         };
         
@@ -83,36 +85,68 @@ const Login = () => {
           updateSavedCredentials(loginData.api_key, loginData.api_secret);
         }
         
+        // Fetch duties and taxes list (company from login response) and save to local DB
+        if (response.data.company) {
+          try {
+            const dutiesAndTaxes = await getDutiesAndTaxesList(response.data.company);
+            if (dutiesAndTaxes) {
+              await saveDutiesAndTaxes(dutiesAndTaxes);
+            }
+          } catch (taxesError) {
+            console.error('Error fetching duties and taxes:', taxesError);
+            // Don't block login if this fails
+          }
+        }
+
+        // Login krte hi products fetch karke DB mein save (price_list="" for initial fetch)
+        try {
+          let allItems = [];
+          let start = 0;
+          let hasMore = true;
+          while (hasMore) {
+            const res = await searchProductsFromERPNext('', '', start, 500);
+            allItems = allItems.concat(res.items);
+            hasMore = res.has_more ?? false;
+            start += 500;
+          }
+          if (allItems.length > 0) {
+            await saveProducts(allItems);
+          }
+        } catch (productsError) {
+          console.error('Error fetching products on login:', productsError);
+          // Don't block login
+        }
+
+        // Login krte hi customers fetch karke DB mein save
+        try {
+          const customers = await searchCustomersFromERPNext('');
+          if (customers.length > 0) {
+            await saveCustomers(customers);
+          }
+        } catch (customersError) {
+          console.error('Error fetching customers on login:', customersError);
+          // Don't block login
+        }
+        
         // Check POS opening entry before proceeding
         try {
           const openingEntryResponse = await checkOpeningEntry(loginData.email);
-          console.log('Opening entry response:', openingEntryResponse);
           
           // Check if response has data and period_start_date
           if (openingEntryResponse && Array.isArray(openingEntryResponse) && openingEntryResponse.length > 0) {
             const openingEntry = openingEntryResponse[0];
-            console.log('Opening entry:', openingEntry);
             
             if (openingEntry.period_start_date) {
               // Parse the period_start_date and check if it's from a previous day
               const periodStartDate = new Date(openingEntry.period_start_date);
               const today = new Date();
               
-              console.log('Period start date (original):', openingEntry.period_start_date);
-              console.log('Period start date (parsed):', periodStartDate);
-              console.log('Today:', today);
-              
               // Reset time to midnight for accurate date comparison
               periodStartDate.setHours(0, 0, 0, 0);
               today.setHours(0, 0, 0, 0);
               
-              console.log('Period start date (midnight):', periodStartDate);
-              console.log('Today (midnight):', today);
-              console.log('Is outdated?', periodStartDate < today);
-              
               // If the opening entry is from a previous day, show error modal
               if (periodStartDate < today) {
-                console.log('Showing outdated modal');
                 setUserEmail(loginData.email); // Store email for closing entry
                 setShowOutdatedModal(true);
                 setIsLoading(false); // Stop loading state
@@ -121,21 +155,20 @@ const Login = () => {
               
               // If the opening entry is from today, prefetch data and navigate to POS
               if (periodStartDate.getTime() === today.getTime()) {
-                console.log('Valid opening entry exists for today, prefetching data...');
                 
                 // Prefetch customers and products before navigating
                 try {
                   if (isOnline()) {
-                    // Get POS profile data
-                    let profileData = await fetchPOSProfileData(loginData.email);
+                    // Get POS profile data (get_pos_profiles)
+                    let profileData = await fetchPOSProfileData();
                     await savePOSProfileData(profileData);
                     
                     // Determine price list from POS profile
                     let profileArray = [];
-                    if (Array.isArray(profileData)) {
-                      profileArray = profileData;
-                    } else if (Array.isArray(profileData?.data)) {
+                    if (Array.isArray(profileData?.data)) {
                       profileArray = profileData.data;
+                    } else if (Array.isArray(profileData)) {
+                      profileArray = profileData;
                     } else if (Array.isArray(profileData?.profiles)) {
                       profileArray = profileData.profiles;
                     } else if (Array.isArray(profileData?.pos_profiles)) {
@@ -160,26 +193,19 @@ const Login = () => {
                     if (priceListFromProfile) {
                       await savePriceList(priceListFromProfile);
                     }
-                    
-                    // Prefetch customers
-                    console.log('Prefetching customers...');
-                    const customers = await searchCustomersFromERPNext('', 10000);
+                    const customers = await searchCustomersFromERPNext('');
                     await saveCustomers(customers);
-                    console.log(`Prefetched ${customers.length} customers`);
-                    
-                    // Prefetch products
-                    console.log('Prefetching products...');
                     const effectivePriceList = priceListFromProfile || '';
-                    const items = await searchProductsFromERPNext(
-                      '',
-                      posProfile,
-                      effectivePriceList,
-                      '',
-                      0,
-                      10000
-                    );
-                    await saveProducts(items);
-                    console.log(`Prefetched ${items.length} products`);
+                    let allItems = [];
+                    let start = 0;
+                    let hasMore = true;
+                    while (hasMore) {
+                      const res = await searchProductsFromERPNext('', effectivePriceList, start, 500);
+                      allItems = allItems.concat(res.items);
+                      hasMore = res.has_more ?? false;
+                      start += 500;
+                    }
+                    await saveProducts(allItems);
                   }
                 } catch (prefetchError) {
                   console.error('Error prefetching data:', prefetchError);
@@ -198,11 +224,13 @@ const Login = () => {
         
         // No valid opening entry - fetch profiles and show opening entry modal
         try {
-          const profileData = await fetchPOSProfileData(loginData.email);
+          const profileData = await fetchPOSProfileData();
           await savePOSProfileData(profileData);
           
           let availableProfiles = [];
-          if (Array.isArray(profileData)) {
+          if (Array.isArray(profileData?.data)) {
+            availableProfiles = profileData.data;
+          } else if (Array.isArray(profileData)) {
             availableProfiles = profileData;
           } else if (Array.isArray(profileData?.profiles)) {
             availableProfiles = profileData.profiles;
@@ -212,23 +240,21 @@ const Login = () => {
             availableProfiles = profileData.allowed_pos_profiles;
           }
           
+          setProfileObjects(availableProfiles);
           const profileList = availableProfiles
             .map((p) => (typeof p === 'string' ? p : p?.name || p?.pos_profile))
             .filter(Boolean);
-          
           const uniqueProfiles = Array.from(new Set(profileList));
           setProfiles(uniqueProfiles);
           
           if (uniqueProfiles.length > 0) {
             const firstProfile = uniqueProfiles[0];
+            const firstObj = availableProfiles.find(
+              (p) => (typeof p === 'object' && (p.name === firstProfile || p.pos_profile === firstProfile)) || p === firstProfile
+            );
             setSelectedProfile(firstProfile);
             await savePOSProfile(firstProfile);
-            
-            // Fetch profile details for the first profile
-            const details = await getPOSProfileDetails(firstProfile);
-            setProfileDetails(details);
-            
-            // Show opening entry modal
+            setProfileDetails(firstObj && typeof firstObj === 'object' ? firstObj : null);
             setShowOpeningModal(true);
           }
         } catch (err) {
@@ -332,10 +358,45 @@ const Login = () => {
       // Step 4: Submit the closing entry
       await savePOSClosingEntry(closingDoc, 'Submit');
 
-      // Step 5: Close modal and navigate to POS profile selection
-      // User will then select a profile and create a new opening entry
+      // Step 5: Close outdated modal and show Create POS / Opening Entry modal on Login
       setShowOutdatedModal(false);
-      navigate('/select-pos-profile');
+      setClosingError(null);
+
+      try {
+        const profileData = await fetchPOSProfileData();
+        await savePOSProfileData(profileData);
+        let availableProfiles = [];
+        if (Array.isArray(profileData?.data)) {
+          availableProfiles = profileData.data;
+        } else if (Array.isArray(profileData)) {
+          availableProfiles = profileData;
+        } else if (Array.isArray(profileData?.profiles)) {
+          availableProfiles = profileData.profiles;
+        } else if (Array.isArray(profileData?.pos_profiles)) {
+          availableProfiles = profileData.pos_profiles;
+        } else if (Array.isArray(profileData?.allowed_pos_profiles)) {
+          availableProfiles = profileData.allowed_pos_profiles;
+        }
+        setProfileObjects(availableProfiles);
+        const profileList = availableProfiles
+          .map((p) => (typeof p === 'string' ? p : p?.name || p?.pos_profile))
+          .filter(Boolean);
+        const uniqueProfiles = Array.from(new Set(profileList));
+        setProfiles(uniqueProfiles);
+        if (uniqueProfiles.length > 0) {
+          const firstProfile = uniqueProfiles[0];
+          const firstObj = availableProfiles.find(
+            (p) => (typeof p === 'object' && (p.name === firstProfile || p.pos_profile === firstProfile)) || p === firstProfile
+          );
+          setSelectedProfile(firstProfile);
+          await savePOSProfile(firstProfile);
+          setProfileDetails(firstObj && typeof firstObj === 'object' ? firstObj : null);
+          setShowOpeningModal(true);
+        }
+      } catch (profileErr) {
+        console.error('Error loading profiles after close:', profileErr);
+        setError('Failed to load POS profiles. Please try again.');
+      }
     } catch (err) {
       console.error('Error closing entry:', err);
       setClosingError(err.message || 'Failed to close POS opening entry. Please try again.');
@@ -353,14 +414,10 @@ const Login = () => {
   const handleProfileChangeInModal = async (newProfile) => {
     setSelectedProfile(newProfile);
     await savePOSProfile(newProfile);
-    
-    // Fetch new profile details for the selected profile
-    try {
-      const details = await getPOSProfileDetails(newProfile);
-      setProfileDetails(details);
-    } catch (err) {
-      console.error('Error fetching new profile details:', err);
-    }
+    const details = profileObjects.find(
+      (p) => (typeof p === 'object' && (p.name === newProfile || p.pos_profile === newProfile)) || p === newProfile
+    );
+    setProfileDetails(details && typeof details === 'object' ? details : null);
   };
 
   const handleBackToLoginFromModal = () => {
@@ -387,16 +444,16 @@ const Login = () => {
           const session = await import('../services/storage').then(m => m.getLoginSession());
           const loginData = await session;
           
-          // Get POS profile data
-          let profileData = await fetchPOSProfileData(loginData.email);
+          // Get POS profile data (get_pos_profiles)
+          let profileData = await fetchPOSProfileData();
           await savePOSProfileData(profileData);
           
           // Determine price list from POS profile
           let profileArray = [];
-          if (Array.isArray(profileData)) {
-            profileArray = profileData;
-          } else if (Array.isArray(profileData?.data)) {
+          if (Array.isArray(profileData?.data)) {
             profileArray = profileData.data;
+          } else if (Array.isArray(profileData)) {
+            profileArray = profileData;
           } else if (Array.isArray(profileData?.profiles)) {
             profileArray = profileData.profiles;
           } else if (Array.isArray(profileData?.pos_profiles)) {
@@ -418,25 +475,20 @@ const Login = () => {
             await savePriceList(priceListFromProfile);
           }
           
-          // Prefetch customers
-          console.log('Prefetching customers...');
-          const customers = await searchCustomersFromERPNext('', 10000);
+          const customers = await searchCustomersFromERPNext('');
           await saveCustomers(customers);
-          console.log(`Prefetched ${customers.length} customers`);
           
-          // Prefetch products
-          console.log('Prefetching products...');
           const effectivePriceList = priceListFromProfile || '';
-          const items = await searchProductsFromERPNext(
-            '',
-            selectedProfile,
-            effectivePriceList,
-            '',
-            0,
-            10000
-          );
-          await saveProducts(items);
-          console.log(`Prefetched ${items.length} products`);
+          let allItems = [];
+          let start = 0;
+          let hasMore = true;
+          while (hasMore) {
+            const res = await searchProductsFromERPNext('', effectivePriceList, start, 500);
+            allItems = allItems.concat(res.items);
+            hasMore = res.has_more ?? false;
+            start += 500;
+          }
+          await saveProducts(allItems);
         } catch (prefetchError) {
           console.error('Error prefetching data:', prefetchError);
         }
@@ -517,7 +569,7 @@ const Login = () => {
         company={profileDetails?.company || ''}
         posProfile={selectedProfile}
         profiles={profiles}
-        paymentMethods={profileDetails?.payments || []}
+        paymentMethods={profileDetails?.payment_methods || []}
         isLoading={isCreatingOpening}
         error={openingError}
       />

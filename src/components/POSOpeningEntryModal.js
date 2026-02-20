@@ -14,11 +14,13 @@ const POSOpeningEntryModal = ({
   isLoading = false,
   error = null 
 }) => {
+
+  const [selectedProfile, setSelectedProfile] = useState('');
   const [balanceDetails, setBalanceDetails] = useState([]);
 
+  // Initialize payment methods only after profile is selected
   useEffect(() => {
-    if (paymentMethods && paymentMethods.length > 0) {
-      // Initialize balance details from payment methods
+    if (selectedProfile && paymentMethods && paymentMethods.length > 0) {
       const initialBalances = paymentMethods.map((payment, index) => ({
         idx: index + 1,
         mode_of_payment: payment.mode_of_payment,
@@ -27,8 +29,17 @@ const POSOpeningEntryModal = ({
         __checked: 1,
       }));
       setBalanceDetails(initialBalances);
+    } else {
+      setBalanceDetails([]);
     }
-  }, [paymentMethods]);
+  }, [selectedProfile, paymentMethods]);
+
+  const handleProfileSelect = (value) => {
+    setSelectedProfile(value);
+    if (onProfileChange) {
+      onProfileChange(value);
+    }
+  };
 
   const handleAmountChange = (index, value) => {
     const newBalanceDetails = [...balanceDetails];
@@ -38,14 +49,16 @@ const POSOpeningEntryModal = ({
 
   const handleCheckboxChange = (index) => {
     const newBalanceDetails = [...balanceDetails];
-    newBalanceDetails[index].__checked = newBalanceDetails[index].__checked ? 0 : 1;
+    newBalanceDetails[index].__checked =
+      newBalanceDetails[index].__checked ? 0 : 1;
     setBalanceDetails(newBalanceDetails);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Only submit checked payment methods
-    const checkedBalances = balanceDetails.filter(balance => balance.__checked === 1);
+    const checkedBalances = balanceDetails.filter(
+      balance => balance.__checked === 1
+    );
     onSubmit(checkedBalances);
   };
 
@@ -57,92 +70,100 @@ const POSOpeningEntryModal = ({
         <div className="pos-opening-header">
           <h2 className="pos-opening-title">Create POS Opening Entry</h2>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="pos-opening-form">
           <div className="pos-opening-body">
-            {/* Company Field */}
-            <div className="form-field">
-              <label className="field-label">
-                Company <span className="required">*</span>
-              </label>
-              <input
-                type="text"
-                className="field-input disabled"
-                value={company}
-                disabled
-              />
-            </div>
 
-            {/* POS Profile Field */}
+            {/* POS Profile Field (Always Visible) */}
             <div className="form-field">
               <label className="field-label">
                 POS Profile <span className="required">*</span>
               </label>
-              {profiles.length > 0 ? (
-                <select
-                  className="field-input"
-                  value={posProfile}
-                  onChange={(e) => onProfileChange && onProfileChange(e.target.value)}
-                  disabled={isLoading}
-                >
-                  {profiles.map((profile) => (
-                    <option key={profile} value={profile}>
-                      {profile}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  className="field-input disabled"
-                  value={posProfile}
-                  disabled
-                />
-              )}
+
+              <select
+                className="field-input"
+                value={selectedProfile}
+                onChange={(e) => handleProfileSelect(e.target.value)}
+                disabled={isLoading}
+              >
+                <option value="" disabled>
+                  Select POS Profile
+                </option>
+
+                {profiles.map((profile) => (
+                  <option key={profile} value={profile}>
+                    {profile}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* Opening Balance Details */}
-            <div className="balance-section">
-              <h3 className="section-title">Opening Balance Details</h3>
-              
-              <div className="balance-table">
-                <div className="table-header">
-                  <div className="header-cell checkbox-cell"></div>
-                  <div className="header-cell payment-cell">
-                    Mode of Payment <span className="required">*</span>
-                  </div>
-                  <div className="header-cell amount-cell">Opening Amount</div>
+            {/* Show Company + Payment only after POS selected */}
+            {selectedProfile && (
+              <>
+                {/* Company Field */}
+                <div className="form-field">
+                  <label className="field-label">
+                    Company <span className="required">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="field-input disabled"
+                    value={company}
+                    disabled
+                  />
                 </div>
 
-                {balanceDetails.map((balance, index) => (
-                  <div key={balance.name} className="table-row">
-                    <div className="table-cell checkbox-cell">
-                      <input
-                        type="checkbox"
-                        checked={balance.__checked === 1}
-                        onChange={() => handleCheckboxChange(index)}
-                        className="row-checkbox"
-                      />
+                {/* Opening Balance Details */}
+                <div className="balance-section">
+                  <h3 className="section-title">Opening Balance Details</h3>
+
+                  <div className="balance-table">
+                    <div className="table-header">
+                      <div className="header-cell checkbox-cell"></div>
+                      <div className="header-cell payment-cell">
+                        Mode of Payment <span className="required">*</span>
+                      </div>
+                      <div className="header-cell amount-cell">
+                        Opening Amount
+                      </div>
                     </div>
-                    <div className="table-cell payment-cell">
-                      <span className="payment-name">{balance.mode_of_payment}</span>
-                    </div>
-                    <div className="table-cell amount-cell">
-                      <input
-                        type="number"
-                        className="amount-input"
-                        value={balance.opening_amount}
-                        onChange={(e) => handleAmountChange(index, e.target.value)}
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
-                        disabled={balance.__checked === 0}
-                      />
-                    </div>
+
+                    {balanceDetails.map((balance, index) => (
+                      <div key={balance.name} className="table-row">
+                        <div className="table-cell checkbox-cell">
+                          <input
+                            type="checkbox"
+                            checked={balance.__checked === 1}
+                            onChange={() => handleCheckboxChange(index)}
+                            className="row-checkbox"
+                          />
+                        </div>
+                        <div className="table-cell payment-cell">
+                          <span className="payment-name">
+                            {balance.mode_of_payment}
+                          </span>
+                        </div>
+                        <div className="table-cell amount-cell">
+                          <input
+                            type="number"
+                            className="amount-input"
+                            value={balance.opening_amount}
+                            onChange={(e) =>
+                              handleAmountChange(index, e.target.value)
+                            }
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                            disabled={balance.__checked === 0}
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              </>
+            )}
 
             {error && (
               <div className="pos-opening-error">
@@ -160,10 +181,11 @@ const POSOpeningEntryModal = ({
             >
               Back to Login
             </button>
+
             <button
               type="submit"
               className="submit-button"
-              disabled={isLoading}
+              disabled={isLoading || !selectedProfile}
             >
               {isLoading ? 'Creating...' : 'Submit'}
             </button>

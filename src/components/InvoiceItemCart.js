@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
 import './InvoiceItemCart.css';
 
-const InvoiceItemCart = ({ customer, cart, subtotal, tax, grandTotal, discountPercentage, discountAmount, onEditCart, onDiscountChange }) => {
+const InvoiceItemCart = ({
+  customer,
+  cart,
+  subtotal,
+  tax,
+  grandTotal,
+  discountPercentage,
+  discountAmount,
+  onEditCart,
+  onDiscountChange,
+  erpInvoice,
+}) => {
   const [showDiscountInput, setShowDiscountInput] = useState(false);
   const [discountInputValue, setDiscountInputValue] = useState('');
 
@@ -14,7 +25,10 @@ const InvoiceItemCart = ({ customer, cart, subtotal, tax, grandTotal, discountPe
     return name.substring(0, 2).toUpperCase();
   };
 
+  const hasErpInvoice = !!erpInvoice;
+
   const handleDiscountClick = () => {
+    if (hasErpInvoice) return; // Disable discount editing when ERP invoice is present
     setShowDiscountInput(true);
     setDiscountInputValue(discountPercentage > 0 ? discountPercentage.toString() : '');
   };
@@ -173,13 +187,22 @@ const InvoiceItemCart = ({ customer, cart, subtotal, tax, grandTotal, discountPe
         </div>
         <div className="total-row">
           <span>Net Total</span>
-          <span>₹ {subtotal.toFixed(2)}</span>
+          <span>₹ {(hasErpInvoice && erpInvoice.net_total != null ? erpInvoice.net_total : subtotal).toFixed(2)}</span>
         </div>
-        <div className="total-row">
-          <span>IGST</span>
-          <span>₹ {tax.toFixed(2)}</span>
-        </div>
-        {discountPercentage > 0 && (
+        {hasErpInvoice && Array.isArray(erpInvoice.taxes_and_charges_applied) && erpInvoice.taxes_and_charges_applied.length > 0 ? (
+          erpInvoice.taxes_and_charges_applied.map((t, idx) => (
+            <div key={`${t.account_head || t.description || 'tax'}-${idx}`} className="total-row">
+              <span>{t.description || t.account_head || 'Tax'}</span>
+              <span>₹ {(t.tax_amount ?? 0).toFixed(2)}</span>
+            </div>
+          ))
+        ) : (
+          <div className="total-row">
+            <span>IGST</span>
+            <span>₹ {tax.toFixed(2)}</span>
+          </div>
+        )}
+        {!hasErpInvoice && discountPercentage > 0 && (
           <div className="total-row discount-row">
             <span>Discount ({discountPercentage}%)</span>
             <span>- ₹ {discountAmount.toFixed(2)}</span>
@@ -187,7 +210,14 @@ const InvoiceItemCart = ({ customer, cart, subtotal, tax, grandTotal, discountPe
         )}
         <div className="total-row grand-total-row">
           <span>Grand Total</span>
-          <span>₹ {(grandTotal - discountAmount).toFixed(2)}</span>
+          <span>
+            ₹{' '}
+            {(
+              hasErpInvoice && erpInvoice.grand_total != null
+                ? erpInvoice.grand_total
+                : grandTotal - discountAmount
+            ).toFixed(2)}
+          </span>
         </div>
       </div>
 

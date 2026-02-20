@@ -119,90 +119,77 @@ export const updateSavedCredentials = (apiKey, apiSecret) => {
   savedApiSecret = apiSecret || '';
 };
 
-// Search products from ERPNext using POS endpoint
+/** Resolve rate and uom from item.price_lists by price list name (selling only). */
+function resolveRateFromPriceLists(item, priceListName) {
+  const lists = item.price_lists;
+  if (Array.isArray(lists) && lists.length > 0) {
+    const match = lists.find(
+      (pl) => (pl.price_list || '').trim() === (priceListName || '').trim() && pl.selling === 1
+    );
+    if (match != null) {
+      return { rate: match.price_list_rate ?? 0, uom: match.uom || item.stock_uom || item.uom || 'Nos' };
+    }
+    const firstSelling = lists.find((pl) => pl.selling === 1);
+    if (firstSelling) {
+      return { rate: firstSelling.price_list_rate ?? 0, uom: firstSelling.uom || item.stock_uom || item.uom || 'Nos' };
+    }
+  }
+  const fallback = item.price_list_rate ?? item.rate ?? item.standard_rate ?? 0;
+  return { rate: fallback, uom: item.stock_uom || item.uom || item.sales_uom || 'Nos' };
+}
+
 export const searchProductsFromERPNext = async (
-  searchTerm = '',
-  posProfile = '',
+  txt = '',
   priceList = '',
-  itemGroup = '',
   start = 0,
   pageLength = 20
 ) => {
   try {
     const client = await createAuthenticatedClient();
 
-    // Create form data
-    const formData = new URLSearchParams();
-    formData.append('search_term', searchTerm || '');
-    formData.append('start', start || 0);
-    formData.append('page_length', pageLength || 20);
-    formData.append('price_list', priceList || 'Standard Selling');
-    formData.append('item_group', itemGroup || '');
-    formData.append('pos_profile', posProfile || '');
-
     const response = await client.post(
-      '/api/method/erpnext.selling.page.point_of_sale.point_of_sale.get_items',
-      formData,
+      '/api/method/frappe.core.doctype.user.custom.get_items',
+      {
+        price_list: priceList || '',
+        txt: txt || '',
+        start: start || 0,
+        page_length: pageLength || 20,
+      },
       {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
         },
       }
     );
 
-    const items =
-      response.data?.message?.items ||
-      response.data?.message ||
-      [];
+    const message = response.data?.message || {};
+    const rawItems = message.items || [];
+    const total = message.total ?? rawItems.length;
+    const has_more = message.has_more ?? false;
 
-    return items.map((item) => ({
-      item_code: item.item_code || item.name,
-      item_name: item.item_name || item.name,
-      description: item.description || '',
-      standard_rate:
-        item.rate ||
-        item.price_list_rate ||
-        item.standard_rate ||
-        0,
-      rate:
-        item.rate ||
-        item.price_list_rate ||
-        item.standard_rate ||
-        0,
-      stock_uom: item.stock_uom || item.uom || 'Nos',
-      image: item.image || null,
-      qty: item.actual_qty || 0,
-      has_variants: item.has_variants || 0,
-    }));
-  } catch (error) {
-    console.error('Error searching products from ERPNext:', error);
-    throw error;
-  }
-};
-
-
-// Fetch products from ERPNext (legacy method - kept for sync)
-export const fetchProducts = async () => {
-  try {
-    const client = await createAuthenticatedClient();
-    const response = await client.get('/api/resource/Item', {
-      params: {
-        fields: JSON.stringify(['item_code', 'item_name', 'description', 'standard_rate', 'stock_uom', 'image']),
-        filters: JSON.stringify([['disabled', '=', 0]]),
-        limit_page_length: 1000,
-      },
+    const items = rawItems.map((item) => {
+      const resolved = resolveRateFromPriceLists(item, priceList || '');
+      return {
+        item_code: item.item_code || item.name,
+        item_name: item.item_name || item.name,
+        description: item.description || '',
+        standard_rate: resolved.rate,
+        rate: resolved.rate,
+        stock_uom: resolved.uom || item.stock_uom || item.uom || item.sales_uom || 'Nos',
+        image: item.item_image ?? item.image ?? null,
+        qty: item.actual_qty ?? item.qty ?? 0,
+        actual_qty: item.actual_qty ?? item.qty ?? 0,
+        has_variants: item.has_variants || 0,
+        item_tax_template: item.item_tax_template || null,
+        tax_category: item.tax_category || null,
+        price_lists: item.price_lists || null,
+      };
     });
-    
-    return response.data.data.map(item => ({
-      item_code: item.item_code,
-      item_name: item.item_name,
-      description: item.description || '',
-      standard_rate: item.standard_rate || 0,
-      stock_uom: item.stock_uom || 'Nos',
-      image: item.image || null,
-    }));
+
+    return { items, total, has_more };
   } catch (error) {
-    console.error('Error fetching products:', error);
+    console.error('Error fetching items from ERPNext:', error);
     throw error;
   }
 };
@@ -231,52 +218,59 @@ export const fetchCustomers = async () => {
   }
 };
 
-// Search customers from ERPNext using Frappe search_link endpoint
-export const searchCustomersFromERPNext = async (searchTerm = '', pageLength = 10) => {
+export const searchCustomersFromERPNext = async (search = '') => {
   try {
     const client = await createAuthenticatedClient();
-    const response = await client.get('/api/method/frappe.desk.search.search_link', {
-      params: {
-        txt: searchTerm || '',
-        doctype: 'Customer',
-        reference_doctype: '',
-        page_length: pageLength || 10,
-        filters: '{}',
-      },
-    });
-    
-    // Handle response structure - Frappe search_link typically returns an array
-    const results = response.data?.message || [];
-    
-    return results.map(item => ({
-      name: item.value || item.name,
-      customer_name: item.description || item.value || item.name,
+    const response = await client.post(
+      '/api/method/frappe.core.doctype.user.custom.get_customers',
+      { search: search || '' },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    const raw = response.data?.message;
+    const results = Array.isArray(raw) ? raw : raw?.data ?? raw?.customers ?? [];
+
+    return results.map((item) => ({
+      name: item.name ?? item.value,
+      customer_name: item.label ?? item.customer_name ?? item.description ?? item.value ?? item.name,
       customer_type: item.customer_type || 'Individual',
       territory: item.territory || '',
+      tax_category: item.tax_category ?? item.gst_category ?? '',
+      state: item.address ?? item.state ?? item.gst_state ?? item.address_state ?? '',
+      default_price_list: item.default_price_list ?? '',
     }));
   } catch (error) {
-    console.error('Error searching customers from ERPNext:', error);
+    console.error('Error fetching customers from ERPNext:', error);
     throw error;
   }
 };
 
-// Fetch POS profile data from ERPNext
-export const fetchPOSProfileData = async (email) => {
+// Fetch POS profiles (frappe.core.doctype.user.custom.get_pos_profiles)
+// Returns { data: [{ name, warehouse, company, selling_price_list, payment_methods, ... }] }
+export const fetchPOSProfileData = async () => {
   try {
     const client = await createAuthenticatedClient();
 
-    const response = await client.get('/api/resource/POS Profile', {
-      params: {
-        filters: JSON.stringify([
-          ["applicable_for_users.user", "=", email]
-        ]),
-        fields: JSON.stringify(["name", "warehouse", "company","selling_price_list"])
-      },
-    });
+    const response = await client.post(
+      '/api/method/frappe.core.doctype.user.custom.get_pos_profiles',
+      {},
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
 
-    return response.data?.data || response.data?.message || {};
+    const message = response.data?.message || response.data;
+    return message || {};
   } catch (error) {
-    console.error('Error fetching POS profile data:', error);
+    console.error('Error fetching POS profiles:', error);
     throw error;
   }
 };
@@ -340,6 +334,140 @@ export const submitSalesInvoice = async (invoiceData) => {
   }
 };
 
+/**
+ * Create Sales Invoice (POS) via custom API
+ * Endpoint: erpnext.accounts.doctype.sales_invoice.sales_invoice_api.create_sales_invoice_api
+ * Used when clicking Checkout (online mode) to create a draft invoice with taxes from ERP.
+ *
+ * payload: {
+ *   posting_date: 'YYYY-MM-DD',
+ *   submit: 0,
+ *   company: string,
+ *   customer: string,
+ *   items: [{ item_code, qty, rate }]
+ * }
+ *
+ * Returns the `message` object from ERPNext response.
+ */
+export const createSalesInvoicePOS = async ({ customerName, company = 'LDT TECH', cartItems }) => {
+  try {
+    const client = await createAuthenticatedClient();
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const payload = {
+      posting_date: today,
+      submit: 0,
+      company,
+      customer: customerName,
+      items: (cartItems || []).map((item) => ({
+        item_code: item.item_code,
+        qty: item.quantity,
+        rate: item.rate,
+      })),
+    };
+
+    const response = await client.post(
+      '/api/method/erpnext.accounts.doctype.sales_invoice.sales_invoice_api.create_sales_invoice_api',
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return response.data?.message || response.data;
+  } catch (error) {
+    console.error('Error creating POS Sales Invoice via API:', error);
+    throw error;
+  }
+};
+
+/**
+ * Submit and pay Sales Invoice (POS) via custom API
+ * Endpoint: erpnext.accounts.doctype.sales_invoice.sales_invoice_api.submit_and_pay_sales_invoice_api
+ *
+ * payload: {
+ *   sales_invoice: 'SINV-26-00045',
+ *   mode_of_payment: 'Cash'
+ * }
+ *
+ * Returns the `message` object from ERPNext response (if any).
+ */
+export const submitAndPaySalesInvoicePOS = async ({ salesInvoice, modeOfPayment = 'Cash' }) => {
+  try {
+    const client = await createAuthenticatedClient();
+
+    const payload = {
+      sales_invoice: salesInvoice,
+      mode_of_payment: modeOfPayment,
+    };
+
+    const response = await client.post(
+      '/api/method/erpnext.accounts.doctype.sales_invoice.sales_invoice_api.submit_and_pay_sales_invoice_api',
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return response.data?.message || response.data;
+  } catch (error) {
+    console.error('Error submitting & paying POS Sales Invoice via API:', error);
+    throw error;
+  }
+};
+
+// Create a new customer in ERPNext
+export const createCustomer = async ({ name, email, phone }) => {
+  try {
+    const client = await createAuthenticatedClient();
+
+    const payload = {
+      customer_name: name,
+      customer_type: 'Individual',
+      phone_number: phone,
+      default_price_list: 'Standard Selling',
+      gst_category: 'Unregistered',
+    };
+
+    if (email) {
+      payload.email_id = email;
+    }
+
+    const response = await client.post('/api/resource/Customer', payload);
+
+    const data =
+      response.data?.data ||
+      response.data?.message ||
+      response.data;
+
+    return {
+      name: data.name,
+      customer_name: data.customer_name || data.name || name,
+      customer_type: data.customer_type || 'Individual',
+      territory: data.territory || '',
+      phone_number: data.phone_number || phone,
+      email_id: data.email_id || email || '',
+    };
+  } catch (error) {
+    console.error('Error creating customer:', error);
+
+    const errorMessage =
+      error?.response?.data?.message ||
+      error?.response?.data?._error_message ||
+      error?.message ||
+      'Failed to create customer.';
+
+    throw new Error(errorMessage);
+  }
+};
+
 // Check POS opening entry for a user
 export const checkOpeningEntry = async (user) => {
   try {
@@ -365,7 +493,26 @@ export const checkOpeningEntry = async (user) => {
   }
 };
 
-
+// Get duties and taxes list for a company (call after login with company from response.data)
+export const getDutiesAndTaxesList = async (company) => {
+  try {
+    const client = await createAuthenticatedClient();
+    const response = await client.post(
+      '/api/method/frappe.core.doctype.user.custom.get_duties_and_taxes_list',
+      { company },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+    return response.data?.message || response.data;
+  } catch (error) {
+    console.error('Error fetching duties and taxes list:', error);
+    throw error;
+  }
+};
 
 // Get POS closing data by opening entry
 export const getPOSClosingDataByOpeningEntry = async (posOpeningEntry) => {
@@ -414,27 +561,6 @@ export const savePOSClosingEntry = async (doc, action = 'Save') => {
     return response.data?.message || response.data;
   } catch (error) {
     console.error('Error saving POS closing entry:', error);
-    throw error;
-  }
-};
-
-// Get POS Profile details including payment methods
-export const getPOSProfileDetails = async (profileName) => {
-  try {
-    const client = await createAuthenticatedClient();
-
-    const response = await client.get(
-      `/api/resource/POS Profile/${encodeURIComponent(profileName)}`,
-      {
-        headers: {
-          'Accept': 'application/json',
-        },
-      }
-    );
-
-    return response.data?.data || response.data;
-  } catch (error) {
-    console.error('Error getting POS profile details:', error);
     throw error;
   }
 };

@@ -1,7 +1,7 @@
 import React from 'react';
 import './Cart.css';
 
-const Cart = ({ cart, onUpdateQuantity, onRemoveItem, onClearCart, subtotal, tax, grandTotal }) => {
+const Cart = ({ cart, onUpdateQuantity, onRemoveItem, onClearCart, subtotal, tax, grandTotal, taxBreakdown = [] }) => {
   if (cart.length === 0) {
     return (
       <div className="cart-empty">
@@ -13,7 +13,7 @@ const Cart = ({ cart, onUpdateQuantity, onRemoveItem, onClearCart, subtotal, tax
 
   return (
     <div className="cart">
-      <div className="cart-items">
+      <div className="cart-items-scroll">
         {cart.map((item) => (
           <div key={item.item_code} className="cart-item">
             <div className="cart-item-info">
@@ -57,13 +57,22 @@ const Cart = ({ cart, onUpdateQuantity, onRemoveItem, onClearCart, subtotal, tax
           <span>Subtotal:</span>
           <span>₹{subtotal.toFixed(2)}</span>
         </div>
-        <div className="summary-row">
-          <span>Tax:</span>
-          <span>₹{tax.toFixed(2)}</span>
-        </div>
+        {taxBreakdown.length > 0 ? (
+          taxBreakdown.map((b) => (
+            <div key={`${b.label}-${b.rate}`} className="summary-row">
+              <span>{b.label} ({b.rate}%):</span>
+              <span>₹{b.amount.toFixed(2)}</span>
+            </div>
+          ))
+        ) : (
+          <div className="summary-row">
+            <span>Tax:</span>
+            <span>₹{tax.toFixed(2)}</span>
+          </div>
+        )}
         <div className="summary-row summary-total">
           <span>Total:</span>
-          <span>₹{grandTotal.toFixed(2)}</span>
+          <span>₹{Math.round(grandTotal).toLocaleString('en-IN')}</span>
         </div>
       </div>
     </div>

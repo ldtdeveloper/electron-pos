@@ -1,7 +1,7 @@
 import React from 'react';
 import './ProductList.css';
 
-const ProductList = ({ products, onAddToCart, isLoading }) => {
+const ProductList = ({ products, onAddToCart, isLoading, hasMore, onLoadMore, isLoadingMore, disableAddToCart, onAddToCartBlocked }) => {
   if (isLoading) {
     return (
       <div className="product-list-loading">
@@ -22,16 +22,29 @@ const ProductList = ({ products, onAddToCart, isLoading }) => {
   }
 
   return (
+    <>
     <div className="product-grid">
       {products.map((product) => {
         const qty = product.actual_qty ?? product.qty ?? 0;
         const price = product.rate || product.standard_rate || 0;
 
+        const handleAddToCart = () => {
+          if (disableAddToCart) {
+            if (onAddToCartBlocked) onAddToCartBlocked();
+            return;
+          }
+          if (qty <= 0) {
+            alert('This item is out of stock and cannot be added to the cart.');
+            return;
+          }
+          onAddToCart(product);
+        };
+
         return (
           <div
             key={product.item_code}
             className="product-card"
-            onClick={() => onAddToCart(product)}
+            onClick={handleAddToCart}
           >
             <div className="stock-badge">
               <span className={`stock-indicator ${qty > 0 ? 'in-stock' : 'out-of-stock'}`}>
@@ -64,6 +77,19 @@ const ProductList = ({ products, onAddToCart, isLoading }) => {
         );
       })}
     </div>
+    {hasMore && onLoadMore && (
+      <div className="product-list-load-more">
+        <button
+          type="button"
+          className="load-more-btn"
+          onClick={onLoadMore}
+          disabled={isLoadingMore}
+        >
+          {isLoadingMore ? 'Loading…' : 'Load more'}
+        </button>
+      </div>
+    )}
+    </>
   );
 };
 

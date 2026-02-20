@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { getSetting, saveSetting, clearLoginSession, getPOSProfile, savePOSProfile, getPriceList, savePriceList } from '../services/storage';
 import { setApiBaseURL, getApiBaseURL, updateSavedCredentials } from '../services/api';
 import { syncProducts, syncCustomers, performFullSync } from '../services/syncService';
+import usePOSStore from '../store/posStore';
 import './Settings.css';
 
 const Settings = ({ onClose, onSyncComplete }) => {
   const navigate = useNavigate();
+  const { clearCart } = usePOSStore();
   const [baseURL, setBaseURL] = useState('');
   const [taxRate, setTaxRate] = useState('0');
   const [posProfile, setPOSProfile] = useState('');
@@ -115,6 +117,9 @@ const Settings = ({ onClose, onSyncComplete }) => {
 
   const handleLogout = async () => {
     if (window.confirm('Are you sure you want to logout? This will clear all settings and session data.')) {
+      // Clear cart
+      clearCart();
+      
       // Clear login session
       await clearLoginSession();
       

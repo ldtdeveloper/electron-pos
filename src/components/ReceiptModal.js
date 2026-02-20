@@ -119,12 +119,7 @@ const ReceiptModal = ({
 
         {/* Action Buttons */}
         <div className="receipt-actions">
-          <button className="receipt-btn receipt-btn-secondary" onClick={handlePrint}>
-            Print Receipt
-          </button>
-          <button className="receipt-btn receipt-btn-secondary" onClick={handleEmail}>
-            Email Receipt
-          </button>
+          {/* For now only show New Order button as requested */}
           <button className="receipt-btn receipt-btn-primary" onClick={handleNewOrder}>
             New Order
           </button>

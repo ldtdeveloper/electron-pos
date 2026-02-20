@@ -1,33 +1,42 @@
-import { 
-  getUnsyncedInvoices, 
+import {
+  getUnsyncedInvoices,
   markInvoiceAsSynced,
-  getProducts,
   saveProducts as saveProductsToDB,
-  getCustomers,
   saveCustomers as saveCustomersToDB,
+  getPriceList,
 } from './storage';
-import { 
-  fetchProducts as fetchProductsFromERPNext,
-  fetchCustomers as fetchCustomersFromERPNext,
+import {
+  searchProductsFromERPNext,
+  searchCustomersFromERPNext,
   submitSalesInvoice,
 } from './api';
 
-// Sync products from ERPNext
+// Sync products from ERPNext (get_items with price_list from POS profile); jaise online aaye DB update
 export const syncProducts = async () => {
   try {
-    const products = await fetchProductsFromERPNext();
-    await saveProductsToDB(products);
-    return { success: true, count: products.length };
+    const priceList = (await getPriceList()) || '';
+    let start = 0;
+    let allItems = [];
+    let hasMore = true;
+
+    while (hasMore) {
+      const res = await searchProductsFromERPNext('', priceList);
+      allItems = allItems.concat(res.items);
+      hasMore = res.has_more ?? false;
+    }
+
+    await saveProductsToDB(allItems);
+    return { success: true, count: allItems.length };
   } catch (error) {
     console.error('Error syncing products:', error);
     throw error;
   }
 };
 
-// Sync customers from ERPNext
+// Sync customers from ERPNext (get_customers); jaise online aaye DB update
 export const syncCustomers = async () => {
   try {
-    const customers = await fetchCustomersFromERPNext();
+    const customers = await searchCustomersFromERPNext('');
     await saveCustomersToDB(customers);
     return { success: true, count: customers.length };
   } catch (error) {

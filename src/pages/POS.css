@@ -117,19 +117,25 @@
 
 .pos-cart {
   width: 400px;
+  min-width: 320px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  height: 100%;
   background: white;
   border-left: 1px solid #e5e7eb;
+  overflow: hidden;
 }
 
 .customer-search-section {
+  flex-shrink: 0;
   padding: 1rem;
   background: #f9fafb;
   border-bottom: 1px solid #e5e7eb;
 }
 
 .cart-header {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -141,6 +147,14 @@
   margin: 0;
   font-size: 1.25rem;
   color: #333;
+}
+
+.cart-wrapper {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .clear-cart-btn {
@@ -159,9 +173,13 @@
 }
 
 .cart-footer {
+  flex-shrink: 0;
   padding: 1rem;
   border-top: 2px solid #e5e7eb;
   background: white;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
 }
 
 .checkout-btn {
@@ -185,6 +203,20 @@
   transform: scale(0.98);
 }
 
+.pos-toast {
+  position: fixed;
+  top: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #111827;
+  color: #f9fafb;
+  padding: 0.75rem 1.25rem;
+  border-radius: 9999px;
+  font-size: 0.9rem;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.4);
+  z-index: 1200;
+}
+
 @media (max-width: 768px) {
   .pos-main {
     flex-direction: column;
@@ -192,7 +224,9 @@
 
   .pos-cart {
     width: 100%;
+    min-width: unset;
     max-height: 50vh;
+    min-height: 280px;
   }
 }
 

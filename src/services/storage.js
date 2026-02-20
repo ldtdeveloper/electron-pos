@@ -46,11 +46,12 @@ export const saveProducts = async (products) => {
       item_code: product.item_code,
       item_name: product.item_name,
       description: product.description || '',
-      // Persist quantity as actual_qty, supporting both API shapes (qty or actual_qty)
       actual_qty: (product.actual_qty ?? product.qty ?? 0),
       rate: product.standard_rate || product.rate || 0,
       stock_uom: product.stock_uom || 'Nos',
       image: product.image || null,
+      item_tax_template: product.item_tax_template || null,
+      tax_category: product.tax_category || null,
       last_synced: new Date().toISOString(),
     });
   }
@@ -85,6 +86,9 @@ export const saveCustomers = async (customers) => {
       customer_name: customer.customer_name,
       customer_type: customer.customer_type || 'Individual',
       territory: customer.territory || '',
+      tax_category: customer.tax_category || '',
+      state: customer.state || '',
+      default_price_list: customer.default_price_list || '',
       last_synced: new Date().toISOString(),
     });
   }
@@ -214,5 +218,14 @@ export const getPOSProfileData = async () => {
   const db = await initDB();
   const setting = await db.get('settings', 'pos_profile_data');
   return setting ? setting.value : null;
+};
+
+// Duties and taxes (from get_duties_and_taxes_list API, saved after login)
+export const saveDutiesAndTaxes = async (data) => {
+  await saveSetting('duties_and_taxes', data);
+};
+
+export const getDutiesAndTaxes = async () => {
+  return await getSetting('duties_and_taxes');
 };
 
