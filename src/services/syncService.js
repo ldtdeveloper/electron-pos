@@ -10,6 +10,8 @@ import {
   searchCustomersFromERPNext,
   submitSalesInvoice,
 } from './api';
+import { processSyncQueue } from './syncQueueService';
+import { isOnline } from '../utils/onlineStatus';
 
 // Sync products from ERPNext (get_items with price_list from POS profile); jaise online aaye DB update
 export const syncProducts = async () => {
@@ -71,10 +73,16 @@ export const syncInvoices = async () => {
 
 // Full sync - products, customers, and invoices
 export const performFullSync = async () => {
+  // Check if online before syncing
+  if (!isOnline()) {
+    throw new Error('Cannot sync: offline mode. Data will sync automatically when online.');
+  }
+
   const results = {
     products: { success: false, error: null },
     customers: { success: false, error: null },
     invoices: { success: false, error: null },
+    queue: { success: false, error: null },
   };
 
   try {
@@ -98,6 +106,41 @@ export const performFullSync = async () => {
     results.invoices.error = error.message;
   }
 
+  // Process sync queue (operations queued while offline)
+  try {
+    const queueResult = await processSyncQueue();
+    results.queue = { 
+      success: true, 
+      processed: queueResult.processed,
+      failed: queueResult.failed,
+      errors: queueResult.errors,
+    };
+  } catch (error) {
+    results.queue.error = error.message;
+  }
+
   return results;
+};
+
+// Auto-sync: Sync products and customers when online (called automatically)
+export const performAutoSync = async () => {
+  if (!isOnline()) {
+    console.log('Auto-sync skipped: offline');
+    return { synced: false, reason: 'offline' };
+  }
+
+  try {
+    // Sync products and customers
+    await syncProducts();
+    await syncCustomers();
+    
+    // Process any queued operations
+    await processSyncQueue();
+    
+    return { synced: true };
+  } catch (error) {
+    console.error('Auto-sync error:', error);
+    return { synced: false, error: error.message };
+  }
 };
 

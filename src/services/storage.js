@@ -1,7 +1,7 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'erpnext-pos-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Initialize IndexedDB
 export const initDB = async () => {
@@ -29,6 +29,14 @@ export const initDB = async () => {
       // Settings store
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings', { keyPath: 'key' });
+      }
+      
+      // Sync Queue store (for queuing operations when offline)
+      if (!db.objectStoreNames.contains('syncQueue')) {
+        const queueStore = db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
+        queueStore.createIndex('type', 'type', { unique: false });
+        queueStore.createIndex('status', 'status', { unique: false });
+        queueStore.createIndex('timestamp', 'timestamp', { unique: false });
       }
     },
   });
@@ -227,5 +235,77 @@ export const saveDutiesAndTaxes = async (data) => {
 
 export const getDutiesAndTaxes = async () => {
   return await getSetting('duties_and_taxes');
+};
+
+// Sync Queue operations
+export const addToSyncQueue = async (operation) => {
+  const db = await initDB();
+  const tx = db.transaction('syncQueue', 'readwrite');
+  const store = tx.objectStore('syncQueue');
+  
+  const queueItem = {
+    type: operation.type, // 'invoice', 'customer', 'product_sync', etc.
+    action: operation.action, // 'create', 'update', 'delete', 'sync'
+    data: operation.data,
+    status: 'pending', // 'pending', 'processing', 'completed', 'failed'
+    timestamp: new Date().toISOString(),
+    retryCount: 0,
+    error: null,
+  };
+  
+  const id = await store.add(queueItem);
+  await tx.done;
+  return id;
+};
+
+export const getSyncQueue = async (status = null) => {
+  const db = await initDB();
+  if (status) {
+    const index = db.transaction('syncQueue').store.index('status');
+    return await index.getAll(status);
+  }
+  return await db.getAll('syncQueue');
+};
+
+export const getPendingSyncQueue = async () => {
+  return await getSyncQueue('pending');
+};
+
+export const updateSyncQueueItem = async (id, updates) => {
+  const db = await initDB();
+  const item = await db.get('syncQueue', id);
+  if (item) {
+    Object.assign(item, updates);
+    await db.put('syncQueue', item);
+  }
+};
+
+export const removeSyncQueueItem = async (id) => {
+  const db = await initDB();
+  await db.delete('syncQueue', id);
+};
+
+export const clearSyncQueue = async () => {
+  const db = await initDB();
+  const tx = db.transaction('syncQueue', 'readwrite');
+  await tx.store.clear();
+  await tx.done;
+};
+
+// Pending checkout invoice: when create_draft is processed offline, we store
+// the ERP invoice name by orderId so submit_and_pay can use it later
+const PENDING_INVOICE_KEY_PREFIX = 'pending_checkout_invoice_';
+
+export const setPendingCheckoutInvoice = async (orderId, invoiceName) => {
+  await saveSetting(PENDING_INVOICE_KEY_PREFIX + orderId, invoiceName);
+};
+
+export const getPendingCheckoutInvoice = async (orderId) => {
+  return await getSetting(PENDING_INVOICE_KEY_PREFIX + orderId);
+};
+
+export const deletePendingCheckoutInvoice = async (orderId) => {
+  const db = await initDB();
+  await db.delete('settings', PENDING_INVOICE_KEY_PREFIX + orderId);
 };
 

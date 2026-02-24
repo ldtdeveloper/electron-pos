@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import usePOSStore from '../store/posStore';
-import { getDutiesAndTaxes, getPOSProfile, getPOSProfileData } from '../services/storage';
+import { getDutiesAndTaxes, getPOSProfile, getPOSProfileData, saveSalesInvoice, addToSyncQueue } from '../services/storage';
 import { calculateCartTax } from '../utils/taxCalculator';
 import { getCompanyState } from '../utils/companyState';
 import { isOnline } from '../utils/onlineStatus';
-import { submitAndPaySalesInvoicePOS } from '../services/api';
+import { submitAndPaySalesInvoicePOS, createSalesInvoicePOS } from '../services/api';
 import NumericKeypad from '../components/NumericKeypad';
 import InvoiceItemCart from '../components/InvoiceItemCart';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -19,6 +19,8 @@ const CompleteOrder = () => {
 
   // When coming from POS checkout in online mode, we may have an ERP Sales Invoice draft
   const erpInvoice = location.state?.erpInvoice || null;
+  // When checkout was done offline, we get this so we can queue submit_and_pay for the same draft
+  const offlineCheckoutOrderId = location.state?.offlineCheckoutOrderId || null;
 
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [discountPercentage, setDiscountPercentage] = useState(0);
@@ -131,16 +133,127 @@ const CompleteOrder = () => {
   };
 
   const handleConfirmSubmit = async () => {
+    const customerName = customer?.customer_name || customer?.name || 'Guest';
+    const company = 'LDT TECH';
+    const modeOfPayment = paymentMethod === 'cash' ? 'Cash' : paymentMethod;
+
     // Online mode with ERP invoice: submit & pay via API
     if (hasErpInvoice) {
       try {
         await submitAndPaySalesInvoicePOS({
           salesInvoice: erpInvoice.name,
-          modeOfPayment: 'Cash',
+          modeOfPayment,
         });
+        // Success - proceed to show receipt
       } catch (error) {
         console.error('Failed to submit & pay Sales Invoice via API:', error);
-        alert('Failed to submit invoice to server. Showing local receipt.');
+        // Queue for retry when online
+        try {
+          await addToSyncQueue({
+            type: 'invoice',
+            action: 'submit_and_pay',
+            data: {
+              erpInvoiceName: erpInvoice.name,
+              modeOfPayment,
+              customerName,
+              company,
+              cartItems: cart,
+            },
+          });
+          alert('Payment failed. Queued for retry. Showing local receipt.');
+        } catch (queueError) {
+          console.error('Failed to queue payment:', queueError);
+          alert('Payment failed. Please try again later.');
+        }
+      }
+    } else if (!isOnline()) {
+      // Offline mode: save invoice locally and queue for sync when back online
+      try {
+        const localInvoice = {
+          customer: customerName,
+          date: new Date().toISOString().split('T')[0],
+          items: cart.map(item => ({
+            item_code: item.item_code,
+            item_name: item.item_name,
+            quantity: item.quantity,
+            rate: item.rate,
+            uom: item.uom || 'Nos',
+          })),
+          taxes: '',
+          total: subtotal,
+          grand_total: grandTotal,
+          payment_method: modeOfPayment,
+          paid_amount: paidAmount,
+        };
+
+        const localInvoiceId = await saveSalesInvoice(localInvoice);
+
+        // If checkout was done offline, we already have create_draft in queue; queue submit_and_pay for that draft
+        if (offlineCheckoutOrderId) {
+          await addToSyncQueue({
+            type: 'invoice',
+            action: 'submit_and_pay',
+            data: {
+              orderId: offlineCheckoutOrderId,
+              modeOfPayment,
+              localInvoiceId,
+            },
+          });
+          console.log('Payment queued for sync (will use draft from checkout queue)');
+        } else {
+          await addToSyncQueue({
+            type: 'invoice',
+            action: 'create_and_pay',
+            data: {
+              customerName,
+              company,
+              cartItems: cart,
+              modeOfPayment,
+              localInvoiceId,
+            },
+          });
+          console.log('Invoice saved locally and queued for sync when online');
+        }
+      } catch (error) {
+        console.error('Error saving invoice locally:', error);
+        alert('Error saving invoice. Please try again.');
+        return;
+      }
+    } else {
+      // Online but no ERP invoice: create draft, then submit & pay
+      try {
+        // Create draft invoice
+        const newErpInvoice = await createSalesInvoicePOS({
+          customerName,
+          company,
+          cartItems: cart,
+        });
+
+        // Submit and pay
+        await submitAndPaySalesInvoicePOS({
+          salesInvoice: newErpInvoice.name,
+          modeOfPayment,
+        });
+        // Success - proceed to show receipt
+      } catch (error) {
+        console.error('Failed to create and submit invoice:', error);
+        // Queue for retry
+        try {
+          await addToSyncQueue({
+            type: 'invoice',
+            action: 'create_and_pay',
+            data: {
+              customerName,
+              company,
+              cartItems: cart,
+              modeOfPayment,
+            },
+          });
+          alert('Invoice creation failed. Queued for retry. Showing local receipt.');
+        } catch (queueError) {
+          console.error('Failed to queue invoice:', queueError);
+          alert('Failed to create invoice. Please try again.');
+        }
       }
     }
 

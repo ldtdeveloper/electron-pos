@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import usePOSStore from '../store/posStore';
-import { getLoginSession, savePOSProfileData, getDutiesAndTaxes, getPOSProfile, getPOSProfileData } from '../services/storage';
-import { performFullSync } from '../services/syncService';
+import { getLoginSession, savePOSProfileData, getDutiesAndTaxes, getPOSProfile, getPOSProfileData, addToSyncQueue } from '../services/storage';
+import { performFullSync, performAutoSync } from '../services/syncService';
 import { updateSavedCredentials, setApiBaseURL, fetchPOSProfileData, createSalesInvoicePOS } from '../services/api';
 import { isOnline, addOnlineListener, addOfflineListener } from '../utils/onlineStatus';
 import { calculateCartTax } from '../utils/taxCalculator';
@@ -46,7 +46,9 @@ const POS = () => {
     if (isOnline()) {
       setIsSyncing(true);
       try {
-        await performFullSync();
+        // Use performAutoSync for automatic syncing (lighter than full sync)
+        await performAutoSync();
+        // Reload products from local DB after sync
         loadProducts();
       } catch (error) {
         console.error('Auto-sync failed:', error);
@@ -86,8 +88,21 @@ const POS = () => {
       loadDutiesAndTaxes();
       loadCompanyState();
       
-      // Fetch and store POS profile data if online
+      // Auto-sync when online (sync products and customers, process queue)
       if (isOnline()) {
+        setIsSyncing(true);
+        performAutoSync()
+          .then(() => {
+            loadProducts(); // Reload products after sync
+            loadDutiesAndTaxes(); // Reload taxes after sync
+          })
+          .catch((error) => {
+            console.error('Initial auto-sync failed:', error);
+          })
+          .finally(() => {
+            setIsSyncing(false);
+          });
+        
         loadPOSProfileData();
       }
     };
@@ -195,26 +210,48 @@ const POS = () => {
       return;
     }
 
-    // If online, first create Sales Invoice via ERPNext API so that taxes come from backend
+    const customerName = customer.customer_name || customer.name;
+    const company = 'LDT TECH'; // Can be refined later from POS profile
+
+    // If online, create Sales Invoice draft via ERPNext API so that taxes come from backend
     if (isOnline()) {
       try {
-        const customerName = customer.customer_name || customer.name;
         const erpInvoice = await createSalesInvoicePOS({
           customerName,
-          // Company can be refined later from POS profile; using default for now
-          company: 'LDT TECH',
+          company,
           cartItems: cart,
         });
+        // Navigate with ERP invoice for proper tax calculation
         navigate('/complete-order', { state: { erpInvoice } });
         return;
       } catch (error) {
-        console.error('Checkout: failed to create Sales Invoice via API, falling back to local totals.', error);
-        setToastMessage('Online invoice failed, using local totals.');
-        setTimeout(() => setToastMessage(''), 2500);
+        console.error('Checkout: failed to create Sales Invoice via API.', error);
+        setToastMessage('Invoice creation failed. Proceeding with local totals.');
+        setTimeout(() => setToastMessage(''), 3000);
       }
+    } else {
+      // Offline: queue checkout API (create_draft) so it syncs when we're back online
+      const orderId = 'co_' + Date.now();
+      try {
+        await addToSyncQueue({
+          type: 'invoice',
+          action: 'create_draft',
+          data: {
+            orderId,
+            customerName,
+            company,
+            cartItems: cart,
+          },
+        });
+      } catch (queueError) {
+        console.error('Failed to queue checkout for sync:', queueError);
+      }
+      // Navigate with orderId so CompleteOrder can queue submit_and_pay for this draft
+      navigate('/complete-order', { state: { offlineCheckoutOrderId: orderId } });
+      return;
     }
 
-    // Offline or API failure – fall back to existing behaviour
+    // Navigate to complete-order (API failure only)
     navigate('/complete-order');
   };
 

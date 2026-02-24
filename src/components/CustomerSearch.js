@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { searchCustomers } from '../services/storage';
+import { searchCustomers, saveCustomers, addToSyncQueue } from '../services/storage';
 import { searchCustomersFromERPNext, createCustomer } from '../services/api';
 import { isOnline } from '../utils/onlineStatus';
 import './CustomerSearch.css';
@@ -122,11 +122,56 @@ const CustomerSearch = ({ selectedCustomer, onSelectCustomer, onClearCustomer })
       setIsCreating(true);
       setCreateError('');
 
-      const created = await createCustomer({
-        name,
-        email: email || null,
-        phone,
-      });
+      let created;
+
+      if (isOnline()) {
+        // Online: create via API
+        try {
+          created = await createCustomer({
+            name,
+            email: email || null,
+            phone,
+          });
+        } catch (apiError) {
+          // If API fails but we're online, queue for retry
+          const tempCustomer = {
+            name: `TEMP-${Date.now()}`,
+            customer_name: name,
+            customer_type: 'Individual',
+            phone_number: phone,
+            email_id: email || '',
+          };
+          
+          await saveCustomers([tempCustomer]);
+          await addToSyncQueue({
+            type: 'customer',
+            action: 'create',
+            data: { name, email, phone },
+          });
+          
+          created = tempCustomer;
+          setCreateError('Customer created locally. Will sync when connection is restored.');
+        }
+      } else {
+        // Offline: save locally and queue for sync
+        const tempCustomer = {
+          name: `TEMP-${Date.now()}`,
+          customer_name: name,
+          customer_type: 'Individual',
+          phone_number: phone,
+          email_id: email || '',
+        };
+        
+        await saveCustomers([tempCustomer]);
+        await addToSyncQueue({
+          type: 'customer',
+          action: 'create',
+          data: { name, email, phone },
+        });
+        
+        created = tempCustomer;
+        setCreateError('Customer created locally. Will sync when connection is restored.');
+      }
 
       onSelectCustomer(created);
       setSearchTerm(created.customer_name);
